@@ -871,8 +871,21 @@ function Update-ConvertMarkdown {
     try {
         $zip = Join-Path $work 'src.zip'
         Write-Verbose "Fetching $repo ($Branch)"
-        Invoke-WebRequest -Uri "https://github.com/$repo/archive/refs/heads/$Branch.zip" `
-            -OutFile $zip -TimeoutSec 60 -ErrorAction Stop
+
+        # codeload serves the archive directly. The github.com/archive URL relies
+        # on a redirect that can return an HTML interstitial instead of the zip,
+        # which surfaces as an opaque FileFormatException from Expand-Archive.
+        Invoke-WebRequest -Uri "https://codeload.github.com/$repo/zip/refs/heads/$Branch" `
+            -OutFile $zip -TimeoutSec 60 -Headers @{ 'User-Agent' = 'ConvertMarkdown' } -ErrorAction Stop
+
+        # Verify it really is a zip before handing it to Expand-Archive, so a
+        # captive portal or rate-limit page gives a comprehensible error.
+        $magic = [byte[]]::new(4)
+        $fs = [IO.File]::OpenRead($zip)
+        try { $null = $fs.Read($magic, 0, 4) } finally { $fs.Dispose() }
+        if ($magic[0] -ne 0x50 -or $magic[1] -ne 0x4B) {
+            throw "Download was not a zip archive (got $([BitConverter]::ToString($magic))). A proxy or captive portal may have intercepted the request."
+        }
 
         Expand-Archive -LiteralPath $zip -DestinationPath $work -Force
         $src = Get-ChildItem -LiteralPath $work -Directory |
