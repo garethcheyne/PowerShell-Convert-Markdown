@@ -108,7 +108,39 @@ automatically.
 | `colours.text` | `#1F1F1F` | Body text. Near-black prints better than pure black. |
 | `diagrams.service` | `mermaid.ink` | `mermaid.ink`, `kroki`, or `none`. |
 | `diagrams.serviceUrl` | `""` | Base URL of a self-hosted renderer. Empty means the public endpoint. |
-| `diagrams.maxWidthPx` | `640` | Max diagram width. 640 is the A4 text width at 96dpi. |
+| `diagrams.maxWidthPx` | `640` | Max diagram width. 640 is the A4 text width at 96dpi. Also capped to page height. |
+| `diagrams.theme` | `base` | Mermaid theme. Only `base` honours your palette — see below. |
+| `diagrams.matchDocumentPalette` | `true` | Style diagrams from your palette so they match the document. |
+
+### Diagram styling
+
+By default a mermaid diagram arrives in mermaid's own mauve-on-beige colours and
+looks pasted in from another document. `matchDocumentPalette` fixes that by
+mapping your palette onto mermaid's theme variables:
+
+| Your style | Mermaid |
+| --- | --- |
+| `colours.band` | node fill |
+| `colours.accent` | node border |
+| `colours.accentSoft` | edges |
+| `colours.text` | labels |
+| `colours.border` | clusters and secondary nodes |
+| `fonts.body` | diagram font |
+
+**This only works with `theme: "base"`.** The named themes (`neutral`, `dark`,
+`forest`, `default`) ignore theme variables entirely, so setting one of those
+silently discards your palette.
+
+**Per-diagram control wins.** A diagram carrying its own `%%{init: ...}%%`
+directive is sent untouched — explicit authoring beats the document default:
+
+````markdown
+```mermaid
+%%{init: {"theme": "forest"}}%%
+flowchart LR
+    A --> B
+```
+````
 
 `colors` is accepted as an alias for `colours`.
 

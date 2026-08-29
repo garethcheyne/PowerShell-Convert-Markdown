@@ -31,16 +31,25 @@ function Invoke-MermaidRender {
         [Parameter(Mandatory)][string] $Source,
         [Parameter(Mandatory)][string] $Service,
         [string] $ServiceUrl,
+        [string] $Theme = 'default',
+        [hashtable] $ThemeVariables,
         [int] $TimeoutSec = 90
     )
 
     $utf8 = [Text.Encoding]::UTF8.GetBytes($Source)
 
+    # A diagram carrying its own %%{init: ...}%% directive has been styled
+    # deliberately. Ours would be overridden by it anyway, so do not send it and
+    # let the author's intent stand.
+    $selfStyled = $Source -match '%%\{\s*init\s*:'
+
     if ($Service -eq 'kroki') {
         # POST, so diagram size is not capped by URL length.
         $base = if ($ServiceUrl) { $ServiceUrl.TrimEnd('/') } else { 'https://kroki.io' }
+        $body = @{ diagram_source = $Source }
+        if (-not $selfStyled) { $body.diagram_options = @{ theme = $Theme } }
         $resp = Invoke-WebRequest -Uri "$base/mermaid/png" -Method Post `
-            -Body $utf8 -ContentType 'text/plain; charset=utf-8' `
+            -Body ($body | ConvertTo-Json -Compress -Depth 6) -ContentType 'application/json' `
             -TimeoutSec $TimeoutSec -MaximumRedirection 2 -ErrorAction Stop
     }
     else {
@@ -50,7 +59,11 @@ function Invoke-MermaidRender {
         $base = if ($ServiceUrl) { $ServiceUrl.TrimEnd('/') } else { 'https://mermaid.ink' }
         $encoded = $null
         try {
-            $json = @{ code = $Source; mermaid = @{ theme = 'default' } } | ConvertTo-Json -Compress -Depth 5
+            $cfg = @{ theme = $Theme }
+            if (-not $selfStyled -and $ThemeVariables -and $ThemeVariables.Count -gt 0) {
+                $cfg.themeVariables = $ThemeVariables
+            }
+            $json = @{ code = $Source; mermaid = $cfg } | ConvertTo-Json -Compress -Depth 6
             $jb = [Text.Encoding]::UTF8.GetBytes($json)
             $ms = [IO.MemoryStream]::new()
             $zs = [IO.Compression.ZLibStream]::new($ms, [IO.Compression.CompressionLevel]::SmallestSize)
@@ -104,10 +117,49 @@ function Get-DefaultStyle {
             text       = '#1F1F1F'
         }
         diagrams = [ordered]@{
-            service    = 'mermaid.ink'
-            serviceUrl = ''
-            maxWidthPx = 640
+            service              = 'mermaid.ink'
+            serviceUrl           = ''
+            maxWidthPx           = 640
+            theme                = 'base'
+            matchDocumentPalette = $true
         }
+    }
+}
+
+function Get-MermaidThemeVariables {
+    <#
+    .SYNOPSIS
+        Maps the document palette onto mermaid theme variables.
+
+    .DESCRIPTION
+        Without this a diagram arrives in mauve-on-beige mermaid defaults and
+        looks pasted in from another document. Mermaid only honours these under
+        the 'base' theme; the named themes ignore them entirely.
+    #>
+    param([Parameter(Mandatory)] $Style)
+
+    $c = $Style.colours
+    @{
+        # Node fill, border and label.
+        primaryColor        = $c.band
+        primaryBorderColor  = $c.accent
+        primaryTextColor    = $c.text
+        # Edges and their labels.
+        lineColor           = $c.accentSoft
+        textColor           = $c.text
+        # Secondary/tertiary nodes - clusters, alternate branches.
+        secondaryColor      = '#FFFFFF'
+        secondaryBorderColor = $c.border
+        secondaryTextColor  = $c.text
+        tertiaryColor       = '#FFFFFF'
+        tertiaryBorderColor = $c.border
+        tertiaryTextColor   = $c.text
+        # State diagram specifics.
+        clusterBkg          = '#FFFFFF'
+        clusterBorder       = $c.border
+        # Match the document, so diagram labels are not visibly a different face.
+        fontFamily          = "'$($Style.fonts.body)', sans-serif"
+        background          = '#FFFFFF'
     }
 }
 
@@ -423,6 +475,15 @@ function Convert-Markdown {
         $DiagramServiceUrl = [string]$style.diagrams.serviceUrl
         $DiagramMaxWidth = [int]$style.diagrams.maxWidthPx
 
+        $mermaidTheme = if ($style.diagrams.Contains('theme')) { [string]$style.diagrams.theme } else { 'base' }
+        $mermaidVars = $null
+        # themeVariables are only honoured under the 'base' theme; sending them
+        # with a named theme is silently ignored, so do not bother.
+        $matchPalette = -not $style.diagrams.Contains('matchDocumentPalette') -or $style.diagrams.matchDocumentPalette
+        if ($matchPalette -and $mermaidTheme -eq 'base') {
+            $mermaidVars = Get-MermaidThemeVariables -Style $style
+        }
+
         $wantDocx = $Format -in @('Docx', 'Both')
         $wantPdf = $Format -in @('Pdf', 'Both')
 
@@ -479,7 +540,8 @@ function Convert-Markdown {
                 }
 
                 try {
-                    $bytes = Invoke-MermaidRender -Source $src -Service $DiagramService -ServiceUrl $DiagramServiceUrl
+                    $bytes = Invoke-MermaidRender -Source $src -Service $DiagramService `
+                        -ServiceUrl $DiagramServiceUrl -Theme $mermaidTheme -ThemeVariables $mermaidVars
                     $png = Join-Path ([IO.Path]::GetTempPath()) ("md2doc_{0}.png" -f [Guid]::NewGuid().ToString('N'))
                     [IO.File]::WriteAllBytes($png, $bytes)
                     $script:tempFiles.Add($png)

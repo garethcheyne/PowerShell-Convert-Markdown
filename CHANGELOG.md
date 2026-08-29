@@ -92,3 +92,16 @@ Installing once removes that class of problem.
 `style.example.json` (every option at its default) and `style.schema.json` (JSON
 Schema, for editor completion and validation) are in the repo root. Generated
 style files carry a `$schema` reference so they get the same editor support.
+
+---
+
+## Diagram styling
+
+`diagrams.theme` and `diagrams.matchDocumentPalette` map the document palette
+onto mermaid's theme variables, so rendered diagrams match the rest of the
+document instead of arriving in mermaid's own colours. Only the `base` theme
+honours theme variables; the named themes ignore them. A diagram carrying its
+own `%%{init: ...}%%` directive is sent untouched.
+
+Kroki now receives a JSON body (`diagram_source` + `diagram_options`) rather than
+raw text, so the theme reaches it too.

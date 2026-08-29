@@ -26,6 +26,8 @@
   "diagrams": {
     "service": "mermaid.ink",
     "serviceUrl": "",
-    "maxWidthPx": 640
+    "maxWidthPx": 640,
+    "theme": "base",
+    "matchDocumentPalette": true
   }
 }

@@ -126,7 +126,18 @@
           "minimum": 200,
           "maximum": 2000,
           "default": 640,
-          "description": "Maximum rendered diagram width in pixels. 640 is the A4 text width at 96dpi. Wider diagrams are scaled down proportionally; narrower ones are left at native size."
+          "description": "Maximum rendered diagram width in pixels. 640 is the A4 text width at 96dpi. Wider diagrams are scaled down proportionally; narrower ones are left at native size. Diagrams are also capped to the page height."
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["base", "default", "neutral", "dark", "forest"],
+          "default": "base",
+          "description": "Mermaid theme. 'base' is the only one that honours themeVariables, so it is required for matchDocumentPalette to have any effect. The named themes ignore your palette entirely and render in mermaid's own colours."
+        },
+        "matchDocumentPalette": {
+          "type": "boolean",
+          "default": true,
+          "description": "Derive mermaid's colours and font from this style's palette, so diagrams look like part of the document rather than pasted in from elsewhere. Requires theme 'base'. A diagram carrying its own %%{init: ...}%% directive is left alone - explicit authoring wins."
         }
       }
     }
