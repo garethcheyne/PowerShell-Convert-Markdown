@@ -105,3 +105,12 @@ own `%%{init: ...}%%` directive is sent untouched.
 
 Kroki now receives a JSON body (`diagram_source` + `diagram_options`) rather than
 raw text, so the theme reaches it too.
+
+---
+
+## Page count fix
+
+`Pages` on the result object was unreliable. Word lays out lazily and
+`ComputeStatistics(wdStatisticPages)` reports only what has been paginated so
+far, so a long document returned a short but plausible number — 3 or 4 — rather
+than an error. Reading `Panes.Pages.Count` forces a real layout pass first.

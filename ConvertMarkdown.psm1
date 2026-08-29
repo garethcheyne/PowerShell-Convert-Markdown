@@ -847,7 +847,15 @@ $body
                 )
             }
 
-            $pages = $doc.ComputeStatistics(2)       # wdStatisticPages
+            # Word lays out lazily, and ComputeStatistics reports only what has
+            # been paginated so far. On a long document that returns something
+            # short and plausible - 3 or 4 - rather than an error, so it is worse
+            # than useless. Reading Panes.Pages.Count forces a real layout pass;
+            # ComputeStatistics is then correct and is kept as the fallback.
+            $pages = 0
+            try { $doc.Repaginate() } catch { }
+            try { $pages = $doc.Windows.Item(1).Panes.Item(1).Pages.Count } catch { }
+            if (-not $pages) { $pages = $doc.ComputeStatistics(2) }
 
             if ($Open) {
                 if (-not $wordWasRunning) { $word.Visible = $true }
