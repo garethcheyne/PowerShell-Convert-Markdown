@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/garethcheyne/PowerShell-Convert-Markdown/main/style.schema.json",
+
+  "name": "Example",
+
+  "page": {
+    "marginMm": 10
+  },
+
+  "fonts": {
+    "body": "Segoe UI",
+    "heading": "Segoe UI Semibold",
+    "mono": "Consolas",
+    "bodySizePt": 10.5
+  },
+
+  "colours": {
+    "accent": "#1F3864",
+    "accentSoft": "#2E74B5",
+    "rule": "#C8102E",
+    "border": "#B4C6E7",
+    "band": "#F2F5FA",
+    "text": "#1F1F1F"
+  },
+
+  "diagrams": {
+    "service": "mermaid.ink",
+    "serviceUrl": "",
+    "maxWidthPx": 640
+  }
+}

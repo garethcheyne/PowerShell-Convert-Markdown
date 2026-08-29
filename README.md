@@ -83,20 +83,60 @@ New-ConvertMarkdownStyle
 New-ConvertMarkdownStyle -Path .\.convertmarkdown.json -Name 'Project docs'
 ```
 
-```jsonc
+[**`style.example.json`**](style.example.json) in this repo is a complete file
+with every option at its default — copy it as a starting point.
+[**`style.schema.json`**](style.schema.json) is a JSON Schema, so editors that
+understand `$schema` (VS Code among them) give you completion, hover
+descriptions and validation as you type. Generated files carry the reference
+automatically.
+
+### Every option
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `name` | `Default` | Label for the style. Reported back on the result object, so you can tell which file was used. |
+| `page.marginMm` | `10` | Margin in millimetres, all four sides. Header and footer sit at half this, floored at 8pt. |
+| `fonts.body` | `Segoe UI` | Body text, running header and footer. |
+| `fonts.heading` | `Segoe UI Semibold` | Headings h1–h3. |
+| `fonts.mono` | `Consolas` | Code blocks and inline code. |
+| `fonts.bodySizePt` | `10.5` | Body size in points. Headings scale independently. |
+| `colours.accent` | `#1F3864` | h1/h2 text and the table header background. |
+| `colours.accentSoft` | `#2E74B5` | h3 text and the left rule on code blocks. |
+| `colours.rule` | `#C8102E` | The heavy rule beneath the document title. |
+| `colours.border` | `#B4C6E7` | Table borders, horizontal rules, blockquote bar, h2 underline. |
+| `colours.band` | `#F2F5FA` | Alternating table row background. |
+| `colours.text` | `#1F1F1F` | Body text. Near-black prints better than pure black. |
+| `diagrams.service` | `mermaid.ink` | `mermaid.ink`, `kroki`, or `none`. |
+| `diagrams.serviceUrl` | `""` | Base URL of a self-hosted renderer. Empty means the public endpoint. |
+| `diagrams.maxWidthPx` | `640` | Max diagram width. 640 is the A4 text width at 96dpi. |
+
+`colors` is accepted as an alias for `colours`.
+
+### Partial overrides
+
+**A style file only needs the keys it changes.** Everything else falls back, so
+these are both valid and complete files:
+
+```json
+{ "colours": { "accent": "#7A0026" } }
+```
+
+```json
 {
-  "name": "My brand",
-  "page":     { "marginMm": 10 },
-  "fonts":    { "body": "Segoe UI", "heading": "Segoe UI Semibold",
-                "mono": "Consolas", "bodySizePt": 10.5 },
-  "colours":  { "accent": "#1F3864", "accentSoft": "#2E74B5", "rule": "#C8102E",
-                "border": "#B4C6E7", "band": "#F2F5FA", "text": "#1F1F1F" },
-  "diagrams": { "service": "mermaid.ink", "serviceUrl": "", "maxWidthPx": 640 }
+  "name": "Confidential",
+  "diagrams": { "service": "none" }
 }
 ```
 
-A style file only needs the keys it changes — everything else falls back to the
-default. `colors` is accepted as well as `colours`.
+That second one is worth knowing about: drop it at `~/.convertmarkdown/style.json`
+and no diagram source ever leaves the machine unless you deliberately override
+with `-DiagramService` on a specific run.
+
+> **A font you name must be installed on the machine doing the conversion**, or
+> Word substitutes one. If your documents contain ASCII diagrams, be aware that
+> Consolas covers the box-drawing block (`─ │ ├ └`) but **not** arrowheads like
+> `►` `▼` `↘`. Word substitutes a proportional font for just those characters and
+> the alignment shears. Stick to `> v \` in ASCII art, or use mermaid.
 
 **Resolution order**, first match wins:
 

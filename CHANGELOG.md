@@ -84,3 +84,11 @@ The script was copied per-repo and run in place. Seven copies had drifted into
 four different versions, and the oldest predated mermaid support entirely — so
 whether diagrams rendered depended on which folder you happened to run it from.
 Installing once removes that class of problem.
+
+---
+
+## Sample style files
+
+`style.example.json` (every option at its default) and `style.schema.json` (JSON
+Schema, for editor completion and validation) are in the repo root. Generated
+style files carry a `$schema` reference so they get the same editor support.

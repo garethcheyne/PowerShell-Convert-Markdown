@@ -84,16 +84,18 @@ function Get-DefaultStyle {
         The built-in style. Deliberately neutral - brand colours belong in a
         style file, not in the module.
     #>
-    @{
+    # Ordered so a generated style file reads in the same order as the example
+    # in the repo, rather than however the hashtable happened to enumerate.
+    [ordered]@{
         name     = 'Default'
-        page     = @{ marginMm = 10 }
-        fonts    = @{
+        page     = [ordered]@{ marginMm = 10 }
+        fonts    = [ordered]@{
             body       = 'Segoe UI'
             heading    = 'Segoe UI Semibold'
             mono       = 'Consolas'
             bodySizePt = 10.5
         }
-        colours  = @{
+        colours  = [ordered]@{
             accent     = '#1F3864'
             accentSoft = '#2E74B5'
             rule       = '#C8102E'
@@ -101,7 +103,7 @@ function Get-DefaultStyle {
             band       = '#F2F5FA'
             text       = '#1F1F1F'
         }
-        diagrams = @{
+        diagrams = [ordered]@{
             service    = 'mermaid.ink'
             serviceUrl = ''
             maxWidthPx = 640
@@ -173,17 +175,17 @@ function Resolve-Style {
     if ($file) {
         $loaded = Import-StyleFile -LiteralPath $file
         foreach ($section in @('page', 'fonts', 'colours', 'diagrams')) {
-            if ($loaded.ContainsKey($section) -and $loaded[$section]) {
+            if ($loaded.Contains($section) -and $loaded[$section]) {
                 foreach ($k in $loaded[$section].Keys) {
                     $style[$section][$k] = $loaded[$section][$k]
                 }
             }
         }
         # US spelling accepted, since half the world writes it that way.
-        if ($loaded.ContainsKey('colors') -and $loaded['colors']) {
+        if ($loaded.Contains('colors') -and $loaded['colors']) {
             foreach ($k in $loaded['colors'].Keys) { $style['colours'][$k] = $loaded['colors'][$k] }
         }
-        if ($loaded.ContainsKey('name')) { $style['name'] = $loaded['name'] }
+        if ($loaded.Contains('name')) { $style['name'] = $loaded['name'] }
         $style['sourceFile'] = $file
     }
 
@@ -238,8 +240,18 @@ function New-ConvertMarkdownStyle {
 
     if (-not $PSCmdlet.ShouldProcess($Path, 'Create style file')) { return }
 
-    $style = Get-DefaultStyle
-    $style['name'] = $Name
+    $defaults = Get-DefaultStyle
+
+    # Ordered, and with $schema first, so editors offer completion and hover help
+    # on a generated file the same as on the example in the repo.
+    $style = [ordered]@{
+        '$schema' = 'https://raw.githubusercontent.com/garethcheyne/PowerShell-Convert-Markdown/main/style.schema.json'
+        name      = $Name
+        page      = $defaults.page
+        fonts     = $defaults.fonts
+        colours   = $defaults.colours
+        diagrams  = $defaults.diagrams
+    }
 
     $ext = [IO.Path]::GetExtension($Path).ToLowerInvariant()
     if ($ext -in '.yaml', '.yml') {
@@ -247,6 +259,7 @@ function New-ConvertMarkdownStyle {
             throw "YAML output needs the powershell-yaml module: Install-Module powershell-yaml -Scope CurrentUser`nOr use a .json path, which needs nothing extra."
         }
         Import-Module powershell-yaml -ErrorAction Stop
+        $style.Remove('$schema')          # not meaningful in YAML
         ConvertTo-Yaml $style | Set-Content -LiteralPath $Path -Encoding UTF8
     }
     else {
@@ -395,7 +408,7 @@ function Convert-Markdown {
         # ------------------------------------------------------------- style
         # Explicit parameters beat the style file; the style file beats defaults.
         $style = Resolve-Style -StyleSheet $StyleSheet -SourceDir (Split-Path -Parent $source)
-        if ($style.ContainsKey('sourceFile')) {
+        if ($style.Contains('sourceFile')) {
             Write-Verbose "Style '$($style.name)' from $($style.sourceFile)"
         }
 
@@ -797,7 +810,7 @@ $body
                 DiagramService   = $DiagramService
                 MarginMm         = $Margin
                 Style            = $style.name
-                StyleFile        = $(if ($style.ContainsKey('sourceFile')) { $style.sourceFile } else { '(built-in)' })
+                StyleFile        = $(if ($style.Contains('sourceFile')) { $style.sourceFile } else { '(built-in)' })
                 Version          = $script:Version
             }
         }

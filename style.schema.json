@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/garethcheyne/PowerShell-Convert-Markdown/main/style.schema.json",
+  "title": "ConvertMarkdown style",
+  "description": "Styling for Convert-Markdown. Every key is optional - anything you leave out falls back to the built-in default, so a style file only needs the parts you are changing.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Points at this schema so editors offer completion and hover help."
+    },
+    "name": {
+      "type": "string",
+      "description": "Label for this style. Shown in verbose output and in the Style property of the result object, so you can tell which file was picked up.",
+      "default": "Default"
+    },
+    "page": {
+      "type": "object",
+      "description": "Page geometry.",
+      "additionalProperties": false,
+      "properties": {
+        "marginMm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 50,
+          "default": 10,
+          "description": "Page margin in millimetres, applied to all four sides. Header and footer sit at half this value (floored at 8pt) so they never collide with the body."
+        }
+      }
+    },
+    "fonts": {
+      "type": "object",
+      "description": "Typefaces. Any font named here must be installed on the machine doing the conversion, or Word will substitute one.",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "type": "string",
+          "default": "Segoe UI",
+          "description": "Body text, and the running header and footer."
+        },
+        "heading": {
+          "type": "string",
+          "default": "Segoe UI Semibold",
+          "description": "Headings h1-h3. Falls back to the body font if unavailable."
+        },
+        "mono": {
+          "type": "string",
+          "default": "Consolas",
+          "description": "Code blocks and inline code. Note: Consolas covers the box-drawing block but not arrowheads such as U+25BA. If your documents contain ASCII diagrams, stick to characters your chosen font actually has, or Word substitutes a proportional font for the odd glyph and the alignment shears."
+        },
+        "bodySizePt": {
+          "type": "number",
+          "minimum": 6,
+          "maximum": 24,
+          "default": 10.5,
+          "description": "Body font size in points. Headings scale independently and are not affected."
+        }
+      }
+    },
+    "colours": {
+      "type": "object",
+      "description": "Palette. British spelling; 'colors' is accepted as an alias.",
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#1F3864",
+          "description": "Primary brand colour. Used for h1/h2 text and the table header background."
+        },
+        "accentSoft": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#2E74B5",
+          "description": "Secondary colour. Used for h3 text and the left rule on code blocks."
+        },
+        "rule": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#C8102E",
+          "description": "The heavy rule beneath the document title."
+        },
+        "border": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#B4C6E7",
+          "description": "Table cell borders, horizontal rules, blockquote bar, and the h2 underline."
+        },
+        "band": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#F2F5FA",
+          "description": "Background for alternating table rows. Keep it close to white or printed tables turn muddy."
+        },
+        "text": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#1F1F1F",
+          "description": "Body text colour. Near-black rather than pure black prints better."
+        }
+      }
+    },
+    "colors": {
+      "type": "object",
+      "description": "US-spelling alias for 'colours'. Same keys."
+    },
+    "diagrams": {
+      "type": "object",
+      "description": "Mermaid rendering. See the privacy note in the README before pointing this at a public service for confidential documents.",
+      "additionalProperties": false,
+      "properties": {
+        "service": {
+          "type": "string",
+          "enum": ["mermaid.ink", "kroki", "none"],
+          "default": "mermaid.ink",
+          "description": "Where diagrams are rendered. 'mermaid.ink' and the public 'kroki' are third-party services and receive the source of every mermaid block. 'none' makes no network call and inserts a labelled placeholder instead - set this here if your documents are confidential, so the safe option is the default and rendering is the deliberate exception."
+        },
+        "serviceUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of a self-hosted renderer, e.g. https://kroki.internal.example. Pair with service 'kroki' to keep diagram source inside your network. Empty means use the public endpoint."
+        },
+        "maxWidthPx": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 2000,
+          "default": 640,
+          "description": "Maximum rendered diagram width in pixels. 640 is the A4 text width at 96dpi. Wider diagrams are scaled down proportionally; narrower ones are left at native size."
+        }
+      }
+    }
+  }
+}
