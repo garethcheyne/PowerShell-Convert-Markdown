@@ -609,9 +609,9 @@ table.meta td { border: none; padding: 1pt 14pt 1pt 0; }
 table.meta td.k { color: #595959; font-weight: 600; white-space: nowrap; }
 table.meta td.v { color: #1F1F1F; }
 
-code { font-family: $fontMono, 'Courier New', monospace; font-size: 9pt; color: #A31515;
+code { font-family: $fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; color: #A31515;
        background: #F4F4F4; padding: 0 2pt; }
-pre { font-family: $fontMono, 'Courier New', monospace; font-size: 9pt; background: #F7F7F9;
+pre { font-family: $fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; background: #F7F7F9;
       border: 0.5pt solid #DDDDDD; border-left: 3pt solid $accentSoft; padding: 6pt 8pt;
       margin: 6pt 0 12pt 0; page-break-inside: avoid; }
 pre code { background: none; color: $textCol; padding: 0; }
