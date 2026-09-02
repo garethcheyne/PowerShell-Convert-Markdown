@@ -29,5 +29,10 @@
     "maxWidthPx": 640,
     "theme": "base",
     "matchDocumentPalette": true
+  },
+
+  "images": {
+    "maxWidthPx": 640,
+    "allowRemote": true
   }
 }
