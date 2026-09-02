@@ -13,7 +13,7 @@
 
 Set-StrictMode -Version Latest
 
-$script:Version = '2026.08.29'
+$script:Version = '2026.09.02'
 
 #region ---------------------------------------------------------- diagrams
 
@@ -123,7 +123,69 @@ function Get-DefaultStyle {
             theme                = 'base'
             matchDocumentPalette = $true
         }
+        images   = [ordered]@{
+            maxWidthPx  = 640
+            allowRemote = $true
+        }
     }
+}
+
+function Resolve-MarkdownImage {
+    <#
+    .SYNOPSIS
+        Turns a Markdown image src into a local file path Word can embed.
+
+    .DESCRIPTION
+        Handles a path relative to the document, an absolute path, a file:// URI,
+        and - when allowed - an http(s) URL, which is downloaded to a temp file.
+        Returns $null when the image cannot be resolved; the caller warns and
+        leaves a visible placeholder rather than failing the conversion.
+    #>
+    param(
+        [Parameter(Mandatory)][string] $Source,
+        [Parameter(Mandatory)][string] $BaseDir,
+        [bool] $AllowRemote = $true
+    )
+
+    # Markdown allows a title after the path: ![alt](cat.png "Tiddles")
+    $src = $Source.Trim()
+    if ($src -match '^(?<p>\S+)\s+.*$') { $src = $Matches['p'] }
+    $src = $src.Trim('<', '>')
+    if (-not $src) { return $null }
+
+    if ($src -match '^(?i)https?://') {
+        if (-not $AllowRemote) {
+            Write-Warning "Remote image skipped (images.allowRemote is false): $src"
+            return $null
+        }
+        try {
+            $ext = [IO.Path]::GetExtension(([Uri]$src).AbsolutePath)
+            if (-not $ext -or $ext.Length -gt 5) { $ext = '.png' }
+            $tmp = Join-Path ([IO.Path]::GetTempPath()) ("md2img_{0}{1}" -f [Guid]::NewGuid().ToString('N'), $ext)
+            Invoke-WebRequest -Uri $src -OutFile $tmp -UseBasicParsing -ErrorAction Stop | Out-Null
+            $script:tempFiles.Add($tmp)
+            return $tmp
+        }
+        catch {
+            Write-Warning "Could not download image ${src}: $($_.Exception.Message)"
+            return $null
+        }
+    }
+
+    if ($src -match '^(?i)file:///') {
+        try { $src = ([Uri]$src).LocalPath } catch { return $null }
+    }
+
+    # Editors percent-encode spaces and unicode in the path as a matter of course.
+    if ($src -match '%[0-9A-Fa-f]{2}') {
+        try { $src = [Uri]::UnescapeDataString($src) } catch { }
+    }
+
+    $full = if ([IO.Path]::IsPathRooted($src)) { $src } else { Join-Path $BaseDir $src }
+    if (Test-Path -LiteralPath $full -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $full).Path
+    }
+    return $null
 }
 
 function Get-MermaidThemeVariables {
@@ -226,7 +288,7 @@ function Resolve-Style {
 
     if ($file) {
         $loaded = Import-StyleFile -LiteralPath $file
-        foreach ($section in @('page', 'fonts', 'colours', 'diagrams')) {
+        foreach ($section in @('page', 'fonts', 'colours', 'diagrams', 'images')) {
             if ($loaded.Contains($section) -and $loaded[$section]) {
                 foreach ($k in $loaded[$section].Keys) {
                     $style[$section][$k] = $loaded[$section][$k]
@@ -303,6 +365,7 @@ function New-ConvertMarkdownStyle {
         fonts     = $defaults.fonts
         colours   = $defaults.colours
         diagrams  = $defaults.diagrams
+        images    = $defaults.images
     }
 
     $ext = [IO.Path]::GetExtension($Path).ToLowerInvariant()
@@ -355,6 +418,11 @@ function Convert-Markdown {
         Without this they land in the document as a grey box full of "graph TB"
         source.
 
+        Markdown images - ![alt](screenshot.png) - are embedded as pictures too.
+        Word silently discards <img src="file:///..."> from imported HTML, so
+        without this they land in the document as empty placeholder boxes. Paths
+        are resolved relative to the document; http(s) URLs are downloaded.
+
         Requires PowerShell 7 and Microsoft Word (desktop, for COM automation).
 
     .PARAMETER Path
@@ -391,6 +459,18 @@ function Convert-Markdown {
 
     .PARAMETER DiagramMaxWidth
         Maximum rendered diagram width in pixels. Default 640 (A4 text width at 96dpi).
+
+    .PARAMETER ImageMaxWidth
+        Maximum embedded image width in pixels. Default 640. Wider images are
+        scaled down with their aspect ratio preserved; narrower ones are left at
+        their natural size.
+
+    .PARAMETER NoRemoteImages
+        Do not download images referenced by http(s) URL. They are skipped with a
+        warning and a placeholder. Local images are unaffected.
+
+        Pair this with -DiagramService none for a conversion that makes no network
+        call at all.
 
     .PARAMETER TableOfContents
         Insert a Table of Contents after the title.
@@ -441,6 +521,11 @@ function Convert-Markdown {
         [ValidateRange(200, 2000)]
         [Nullable[int]] $DiagramMaxWidth,
 
+        [ValidateRange(100, 2000)]
+        [Nullable[int]] $ImageMaxWidth,
+
+        [switch] $NoRemoteImages,
+
         [switch] $TableOfContents,
 
         [switch] $Open,
@@ -470,10 +555,18 @@ function Convert-Markdown {
         if ($PSBoundParameters.ContainsKey('DiagramServiceUrl')) { $style.diagrams.serviceUrl = $DiagramServiceUrl }
         if ($PSBoundParameters.ContainsKey('DiagramMaxWidth')) { $style.diagrams.maxWidthPx = $DiagramMaxWidth }
 
+        # Belt and braces: Resolve-Style always starts from the defaults, but a
+        # caller handing in a hand-built style should not trip StrictMode here.
+        if (-not $style.Contains('images')) { $style['images'] = (Get-DefaultStyle).images }
+        if ($PSBoundParameters.ContainsKey('ImageMaxWidth')) { $style.images.maxWidthPx = $ImageMaxWidth }
+        if ($NoRemoteImages) { $style.images.allowRemote = $false }
+
         $Margin = [double]$style.page.marginMm
         $DiagramService = [string]$style.diagrams.service
         $DiagramServiceUrl = [string]$style.diagrams.serviceUrl
         $DiagramMaxWidth = [int]$style.diagrams.maxWidthPx
+        $ImageMaxWidth = [int]$style.images.maxWidthPx
+        $allowRemoteImages = -not $style.images.Contains('allowRemote') -or $style.images.allowRemote
 
         $mermaidTheme = if ($style.diagrams.Contains('theme')) { [string]$style.diagrams.theme } else { 'base' }
         $mermaidVars = $null
@@ -573,6 +666,64 @@ function Convert-Markdown {
             $script:diagramsFailed += $unrecognised
             Write-Warning ("$unrecognised mermaid block(s) were not recognised and will appear in the document as " +
                 'raw source. Check the fence spelling (```mermaid) and that the fence lines carry no trailing text.')
+        }
+
+        # ---------------------------------------------------- images -> picture
+        # Same reason as the diagrams above: Word drops <img src="file:///...">
+        # on HTML import and leaves an empty placeholder box, so each Markdown
+        # image becomes a text token that AddPicture swaps for a real, embedded
+        # picture once the document exists.
+        $script:imageNo = 0
+        $script:imagesEmbedded = 0
+        $script:imagesMissing = 0
+        $script:images = [Collections.Generic.List[object]]::new()
+        $sourceDir = Split-Path -Parent $source
+
+        # Fenced code is skipped so a document that *documents* Markdown keeps its
+        # examples as text. Inline code is handled per-line below.
+        $inFence = $false
+        $imgLines = foreach ($line in ($markdown -split "`n")) {
+            if ($line -match '^[ \t]*(```|~~~)') { $inFence = -not $inFence; $line; continue }
+            if ($inFence -or $line -notmatch '!\[') { $line; continue }
+
+            $out = [regex]::Replace($line, '!\[(?<alt>[^\]]*)\]\((?<src>[^)]+)\)', {
+                    param($m)
+                    # An image inside inline code is an example, not a picture.
+                    # Match exposes no public Input property, so read the line the
+                    # evaluator was built for - it is in scope for this iteration.
+                    $before = $line.Substring(0, $m.Index)
+                    if (([regex]::Matches($before, '`').Count % 2) -eq 1) { return $m.Value }
+
+                    $alt = $m.Groups['alt'].Value
+                    $file = Resolve-MarkdownImage -Source $m.Groups['src'].Value -BaseDir $sourceDir `
+                        -AllowRemote $allowRemoteImages
+                    if (-not $file) {
+                        $script:imagesMissing++
+                        Write-Warning "Image not found, leaving a placeholder: $($m.Groups['src'].Value)"
+                        $label = if ($alt) { $alt } else { $m.Groups['src'].Value }
+                        return "<span class=""image-missing"">[image not found: $([Net.WebUtility]::HtmlEncode($label))]</span>"
+                    }
+
+                    $script:imageNo++
+                    $token = "@@MDIMAGE$($script:imageNo)@@"
+                    $script:images.Add([pscustomobject]@{
+                            Token = $token
+                            Path  = $file
+                            Alt   = $alt
+                            Label = "Image $($script:imageNo)"
+                        })
+                    return $token
+                })
+
+            # An image alone on its line is a figure, not a run of text - centre it
+            # and keep it off a page break, exactly as a diagram is treated.
+            if ($out.Trim() -match '^@@MDIMAGE\d+@@$') { "<p class=""image"">$($out.Trim())</p>" }
+            else { $out }
+        }
+        $markdown = $imgLines -join "`n"
+
+        if ($script:imageNo -gt 0) {
+            Write-Verbose "$($script:imageNo) image(s) queued for embedding"
         }
 
         # ------------------------------------------- pre-process: metadata block
@@ -694,8 +845,11 @@ pre code { background: none; color: $textCol; padding: 0; }
 blockquote { border-left: 3pt solid $border; margin: 6pt 0 12pt 0; padding: 2pt 0 2pt 10pt; color: #444444; }
 
 p.diagram { text-align: center; margin: 10pt 0 12pt 0; page-break-inside: avoid; }
+p.image { text-align: center; margin: 10pt 0 12pt 0; page-break-inside: avoid; }
 p.diagram-missing { border: 0.5pt dashed $border; background: $band; color: #595959;
       text-align: center; padding: 10pt; margin: 10pt 0 12pt 0; font-size: 9.5pt; }
+span.image-missing { border: 0.5pt dashed $border; background: $band; color: #595959;
+      padding: 2pt 6pt; font-size: 9pt; font-style: italic; }
 strong { color: $textCol; }
 </style>
 </head>
@@ -761,6 +915,42 @@ $body
                     if ($shape.Width -gt $maxW) { $shape.Width = $maxW }
                     if ($shape.Height -gt $maxH) { $shape.Height = $maxH }
                 }
+            }
+
+            # Markdown images, by the same mechanism.
+            if ($script:images.Count -gt 0) {
+                $imgMaxW = [Math]::Min($ImageMaxWidth * 0.75, $ps.PageWidth - $ps.LeftMargin - $ps.RightMargin)
+                $imgMaxH = $ps.PageHeight - $ps.TopMargin - $ps.BottomMargin - 24
+
+                foreach ($i in $script:images) {
+                    $rng = $doc.Content
+                    $find = $rng.Find
+                    $find.ClearFormatting()
+                    $find.Text = $i.Token
+                    $find.Forward = $true
+                    $find.Wrap = 0                   # wdFindStop
+                    $find.MatchCase = $true
+                    if (-not $find.Execute()) {
+                        Write-Warning "$($i.Label): placeholder not found in the document."
+                        continue
+                    }
+                    $rng.Text = ''
+                    try {
+                        $shape = $doc.InlineShapes.AddPicture($i.Path, $false, $true, $rng)
+                    }
+                    catch {
+                        Write-Warning "$($i.Label): Word could not embed $($i.Path) - $($_.Exception.Message)"
+                        continue
+                    }
+                    $shape.LockAspectRatio = -1
+                    if ($shape.Width -gt $imgMaxW) { $shape.Width = $imgMaxW }
+                    if ($shape.Height -gt $imgMaxH) { $shape.Height = $imgMaxH }
+                    # Alt text is what a screen reader announces, and what Word's
+                    # accessibility checker looks for.
+                    if ($i.Alt) { $shape.AlternativeText = $i.Alt }
+                    $script:imagesEmbedded++
+                }
+                Write-Verbose "$($script:imagesEmbedded) of $($script:imageNo) image(s) embedded"
             }
 
             $section = $doc.Sections.Item(1)
@@ -878,6 +1068,9 @@ $body
                 DiagramsRendered = $script:diagramsRendered
                 DiagramsFailed   = $script:diagramsFailed
                 DiagramService   = $DiagramService
+                Images           = $script:imageNo
+                ImagesEmbedded   = $script:imagesEmbedded
+                ImagesMissing    = $script:imagesMissing
                 MarginMm         = $Margin
                 Style            = $style.name
                 StyleFile        = $(if ($style.Contains('sourceFile')) { $style.sourceFile } else { '(built-in)' })

@@ -1,9 +1,9 @@
 # ConvertMarkdown
 
 Converts Markdown into a styled Word `.docx`, a PDF, or both — with mermaid
-diagrams rendered as real embedded pictures.
+diagrams and Markdown images embedded as real pictures.
 
-**Version:** 2026.08.29 · **Requires:** PowerShell 7+ and Microsoft Word (desktop, Windows)
+**Version:** 2026.09.02 · **Requires:** PowerShell 7+ and Microsoft Word (desktop, Windows)
 
 ---
 
@@ -111,6 +111,8 @@ automatically.
 | `diagrams.maxWidthPx` | `640` | Max diagram width. 640 is the A4 text width at 96dpi. Also capped to page height. |
 | `diagrams.theme` | `base` | Mermaid theme. Only `base` honours your palette — see below. |
 | `diagrams.matchDocumentPalette` | `true` | Style diagrams from your palette so they match the document. |
+| `images.maxWidthPx` | `640` | Max embedded image width. Wider images scale down, aspect ratio preserved. |
+| `images.allowRemote` | `true` | Download and embed images referenced by `http(s)` URL. `false` skips them with a warning. |
 
 ### Diagram styling
 
@@ -200,6 +202,8 @@ Explicit parameters (`-Margin`, `-Accent`, …) always win over the style file.
 | `-DiagramService` | `mermaid.ink` | `mermaid.ink`, `kroki`, or `none`. |
 | `-DiagramServiceUrl` | — | Base URL of a self-hosted renderer. |
 | `-DiagramMaxWidth` | `640` | Max diagram width in pixels. |
+| `-ImageMaxWidth` | `640` | Max embedded image width in pixels. |
+| `-NoRemoteImages` | off | Skip images referenced by `http(s)` URL. |
 | `-TableOfContents` | off | Insert a TOC after the title. |
 | `-Open` | off | Leave open in Word instead of closing. |
 | `-Force` | off | Overwrite existing output. |
@@ -246,12 +250,48 @@ that reason. Use `kroki` with `-DiagramServiceUrl` pointing at your own instance
 
 ---
 
+## Images
+
+`![alt](screenshot.png)` is embedded as a real picture. Word silently discards
+`<img src="file:///...">` from imported HTML, so without this images arrive as
+empty placeholder boxes — the same problem mermaid blocks have, solved the same
+way: a text token in the markup that `InlineShapes.AddPicture` replaces once the
+document exists.
+
+| Written as | Resolved |
+| --- | --- |
+| `![x](pics/shot.png)` | Relative to the **document**, not the working directory |
+| `![x](C:/shots/a.png)` | Absolute path |
+| `![x](pics/a%20shot.png)` | Percent-encoding is decoded |
+| `![x](<pics/shot.png>)` | Angle brackets stripped |
+| `![x](shot.png "Title")` | Title ignored, path used |
+| `![x](https://…/a.png)` | Downloaded to a temp file, unless `-NoRemoteImages` |
+
+An image alone on its line is centred and kept off a page break. An image inside
+a sentence stays inline. Alt text is written to the picture's `AlternativeText`,
+which is what a screen reader announces and what Word's accessibility checker
+looks for.
+
+Images are **not** touched inside fenced code blocks or inline code, so a document
+that documents Markdown keeps its examples as text.
+
+A missing file leaves a visible `[image not found: …]` placeholder and emits a
+warning; it never fails the conversion. `ImagesEmbedded` and `ImagesMissing` on
+the result object report what happened.
+
+> **Privacy**
+> `-NoRemoteImages` stops image URLs being fetched. Pair it with
+> `-DiagramService none` for a conversion that makes no network call at all.
+
+---
+
 ## What it produces
 
 - A4, **10mm margins** on all four sides (configurable)
 - Running header with the document title and a hairline rule
 - Footer with date, and `Page X of Y`
 - Styled headings, banded tables, code blocks, blockquotes and task-list glyphs
+- Markdown images embedded as real pictures, with alt text carried onto the shape
 - `**Key:** value` lines above the first `---` collapse into a metadata table
 - Table header rows repeat across page breaks; rows do not split mid-cell
 - PDF output carries heading bookmarks and structure tags, so it is navigable

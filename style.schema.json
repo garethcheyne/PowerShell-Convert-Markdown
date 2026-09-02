@@ -112,7 +112,11 @@
       "properties": {
         "service": {
           "type": "string",
-          "enum": ["mermaid.ink", "kroki", "none"],
+          "enum": [
+            "mermaid.ink",
+            "kroki",
+            "none"
+          ],
           "default": "mermaid.ink",
           "description": "Where diagrams are rendered. 'mermaid.ink' and the public 'kroki' are third-party services and receive the source of every mermaid block. 'none' makes no network call and inserts a labelled placeholder instead - set this here if your documents are confidential, so the safe option is the default and rendering is the deliberate exception."
         },
@@ -130,7 +134,13 @@
         },
         "theme": {
           "type": "string",
-          "enum": ["base", "default", "neutral", "dark", "forest"],
+          "enum": [
+            "base",
+            "default",
+            "neutral",
+            "dark",
+            "forest"
+          ],
           "default": "base",
           "description": "Mermaid theme. 'base' is the only one that honours themeVariables, so it is required for matchDocumentPalette to have any effect. The named themes ignore your palette entirely and render in mermaid's own colours."
         },
@@ -138,6 +148,25 @@
           "type": "boolean",
           "default": true,
           "description": "Derive mermaid's colours and font from this style's palette, so diagrams look like part of the document rather than pasted in from elsewhere. Requires theme 'base'. A diagram carrying its own %%{init: ...}%% directive is left alone - explicit authoring wins."
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "description": "Embedding of Markdown images (![alt](path)) as Word pictures.",
+      "additionalProperties": false,
+      "properties": {
+        "maxWidthPx": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 2000,
+          "default": 640,
+          "description": "Maximum embedded image width in pixels. Wider images are scaled down with their aspect ratio preserved; narrower ones keep their natural size. 640 is the A4 text width at 96dpi with 10mm margins."
+        },
+        "allowRemote": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether images referenced by http(s) URL are downloaded and embedded. Set false so that only local images are used and the conversion makes no image network call; remote ones are skipped with a warning and a placeholder."
         }
       }
     }

@@ -4,6 +4,39 @@ Versioned `yyyy.MM.dd`.
 
 ---
 
+## 2026.09.02
+
+### Added
+
+- **Markdown images are embedded as real pictures.** `![alt](screenshot.png)` now
+  arrives in the document as an embedded picture. Word silently discards
+  `<img src="file:///...">` from imported HTML, so previously these landed as empty
+  placeholder boxes and the only way round it was to post-process the `.docx`
+  yourself. Uses the same token-and-`AddPicture` mechanism as mermaid diagrams.
+  - Paths resolve relative to the **document**, not the working directory
+  - Absolute paths, `file://` URIs, percent-encoding, `<angle brackets>` and a
+    trailing `"title"` are all handled
+  - `http(s)` URLs are downloaded to a temp file and embedded
+  - An image alone on its line is centred and kept off a page break; an image
+    inside a sentence stays inline
+  - Alt text is written to the picture's `AlternativeText`, so screen readers
+    announce it and Word's accessibility checker is satisfied
+  - Images inside fenced code blocks and inline code are left as text, so a
+    document about Markdown keeps its examples
+  - A missing file leaves a visible `[image not found: ...]` placeholder and a
+    warning rather than failing the conversion
+- `-ImageMaxWidth` (default 640px) and the `images.maxWidthPx` style key.
+- `-NoRemoteImages` and the `images.allowRemote` style key. With
+  `-DiagramService none`, gives a conversion that makes no network call at all.
+- `Images`, `ImagesEmbedded` and `ImagesMissing` on the result object.
+
+### Changed
+
+- `New-ConvertMarkdownStyle` and `style.example.json` now include the `images`
+  section. Existing style files stay valid — the section falls back to defaults.
+
+---
+
 ## 2026.08.29
 
 First public release. Consolidates a script that had been copied into several
