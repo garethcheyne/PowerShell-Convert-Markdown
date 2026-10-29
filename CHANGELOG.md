@@ -4,6 +4,128 @@ Versioned `yyyy.MM.dd`.
 
 ---
 
+## 2026.10.29
+
+### Added
+
+- **Title page.** `-TitlePage` (or `cover.enabled` in a style or theme) starts the
+  document with a full-bleed title page: logo or accent bar, kicker, title and
+  standfirst on a tinted panel, and the frontmatter fields along the bottom. It is
+  its own section with no running header; the body's header and footer start on
+  page two. The title, standfirst and fields come off the top of the body rather
+  than being printed twice. `-NoTitlePage` overrides a style that enables it.
+- **Landscape.** `-Orientation Landscape` (or `page.orientation`) turns every page,
+  title page included. Portrait remains the default.
+- **Themes.** A theme is a folder holding `theme.json` and the assets it names (a
+  logo). It layers between the built-in defaults and the style file, and is chosen
+  with `-Theme`, a style file's `"theme"` key, or `$env:CONVERTMARKDOWN_THEME`.
+  Themes are found in `$env:CONVERTMARKDOWN_THEMES`, `~/.convertmarkdown/themes` and
+  the module's own `theming/` folder. Relative paths in a theme or style file
+  resolve against that file, so a theme can live anywhere.
+- `Install.ps1` copies the repo's `theming/` folder (gitignored, for private brand
+  themes) to `~/.convertmarkdown/themes`, and `-DefaultTheme <name>` makes one the
+  machine-wide default, keeping the previous style file as `style.json.bak`.
+- `New-ConvertMarkdownStyle -Theme <name>` writes a style file that only selects the
+  theme. A file listing every default would hide the whole theme.
+- Style keys `fonts.title`, `colours.heading`, `colours.muted`,
+  `tables.headerStyle` (`filled` or the lighter `rule`), and the `cover` section.
+  All default to the previous output, so existing styles are unchanged.
+- `Orientation`, `TitlePage` and `Theme` on the result object.
+
+---
+
+## 2026.09.03
+
+### Added
+
+- **NextDocs extended Markdown is rendered instead of mangled.** `:::` blocks,
+  inline directives and role-gated sections previously reached Word as broken
+  markup: Markdig's custom-container extension threw the `:::api GET /path`
+  header away, read the `---` separator inside a block as a setext underline,
+  split a diff into two bullet lists, and its generic-attributes extension
+  swallowed `:badge[x]{warning}` into an HTML attribute on the paragraph. Every
+  construct is now resolved ahead of Markdig and re-imagined for a page that
+  cannot be clicked:
+  - `> [!NOTE|TIP|IMPORTANT|WARNING|CAUTION]` — tinted panel with a coloured
+    left bar, glyph and label
+  - `:::steps` — numbered disc in the gutter, bold step title, body beneath
+  - `:::tabs` — every panel printed under its own label bar, so no alternative
+    is lost to whichever tab happened to be open
+  - `:::details` — shown open, summary kept as the heading
+  - `:::filetree` — box-drawing tree, folders in bold
+  - `:::api` — coloured method chip and monospace path
+  - `:::diff` — tinted lines with the `+`/`-` kept for grey-scale printing
+  - `:::gallery` — picture grid, alt text as the caption
+  - `:::release` — accent title bar with version and teams
+  - `:kbd[Ctrl+S]` — boxed key caps; `:badge[text]{variant}` — coloured pill
+- **YAML frontmatter becomes the document header.** `title` is the H1 (and so the
+  running header and the `.docx` Title property), `excerpt` the standfirst, and
+  the remaining fields join the key/value box. Previously Markdig welded the whole
+  block into one enormous H2.
+- `-ExcludeRestricted` drops `!variant!# ROLE ... !endvariant!` sections. Without
+  it they are printed behind a dashed "Restricted" banner and the conversion warns
+  that the file carries them; they used to pass through with their markers intact.
+  The removal runs before the diagram pass, so a mermaid block inside a restricted
+  section is never sent to a rendering service either.
+- `ExtendedBlocks`, `Callouts` and `Restricted` on the result object.
+- An `examples/` folder: a plain-Markdown baseline, a full extended-Markdown
+  reference, a realistic NextDocs page, a styling walkthrough and an edge-case
+  document, with the sample images the gallery examples need.
+- **A Pester test suite** (`tests/`, run with `tests/Invoke-Tests.ps1`). Split by
+  tag: the default set is pure string-to-string checks that need neither Word nor
+  network and runs in about a second; the `Word`-tagged set does end-to-end
+  conversions. The corpus is `examples/*.md`, and the suite fails if a block type,
+  callout type or inline directive is missing from it — so a feature nobody
+  documented is a feature the build rejects. Malformed input lives in
+  `tests/fixtures/`.
+
+### Fixed
+
+- Pictures inside a `:::gallery` are sized to their column rather than the page,
+  which used to push the table off the right margin.
+- Markdig's inline `<svg>` icon for a GitHub alert is stripped; Word imported it
+  as literal path data.
+- **`~~strikethrough~~` text no longer disappears.** Markdig emits `<del>`, which
+  Word imports as a *tracked deletion* rather than as formatting — so the text
+  became a hidden revision and was absent from the PDF entirely. `<del>` and
+  `<ins>` are now mapped to `<s>` and `<u>`, which Word treats as ordinary
+  character formatting.
+- **Code blocks, blockquotes and placeholder boxes sit on the margin.** Word turns
+  CSS padding on a bordered or shaded block into a border distance and draws that
+  box *outward*, so a code block's grey panel hung 8pt past the text column on both
+  sides while tables and rules sat flush. Each such block now carries a horizontal
+  margin equal to its horizontal padding, which cancels the overhang exactly.
+- Inline markup in a `**Key:** value` box or a frontmatter field is converted
+  rather than printed as literal backticks and asterisks. Those cells are raw HTML
+  by the time Markdig runs, and CommonMark does not look inside an HTML block.
+
+- **An unterminated `!variant!` no longer defeats `-ExcludeRestricted` silently.**
+  The strip is regex-paired, so a missing or misspelt `!endvariant!` removed
+  nothing and said nothing — the restricted section shipped. The markers are now
+  counted (ignoring fenced and inline code, so a document *about* the syntax is not
+  a false positive); an imbalance refuses the conversion under `-ExcludeRestricted`
+  and warns otherwise.
+- `-TableOfContents` puts the TOC after the whole document header rather than
+  after the title, so a frontmatter standfirst and key/value box are no longer
+  split from the H1 by the contents field.
+- A frontmatter `title` is emitted as encoded text rather than as markdown, so
+  markup in a title is shown rather than interpreted.
+- A block nested inside another block — a callout inside a `:::tabs` panel, say —
+  no longer leaves its `@@NDBLOCK…@@` placeholder in the document. The inner block
+  is tokenised first, so its token travelled inside the outer block's stashed HTML
+  and one substitution pass never reached it.
+
+### Changed
+
+- **Tables are set more tightly.** Word gives each cell paragraph the body's 8pt
+  space-after, which was more vertical room than the cell padding itself; data
+  tables now have it zeroed and cell padding is 2.5pt rather than 4pt. Extended
+  blocks keep normal paragraph spacing — they hold prose, not single values.
+- The `-DiagramServiceUrl` example in the help text no longer names a private
+  internal host.
+
+---
+
 ## 2026.09.02
 
 ### Added

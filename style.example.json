@@ -4,12 +4,14 @@
   "name": "Example",
 
   "page": {
-    "marginMm": 10
+    "marginMm": 10,
+    "orientation": "Portrait"
   },
 
   "fonts": {
     "body": "Segoe UI",
     "heading": "Segoe UI Semibold",
+    "title": "",
     "mono": "Consolas",
     "bodySizePt": 10.5
   },
@@ -17,10 +19,25 @@
   "colours": {
     "accent": "#1F3864",
     "accentSoft": "#2E74B5",
+    "heading": "",
+    "muted": "#595959",
     "rule": "#C8102E",
     "border": "#B4C6E7",
     "band": "#F2F5FA",
     "text": "#1F1F1F"
+  },
+
+  "tables": {
+    "headerStyle": "filled"
+  },
+
+  "cover": {
+    "enabled": false,
+    "logo": "",
+    "logoWidthMm": 55,
+    "kicker": "",
+    "band": "",
+    "fields": []
   },
 
   "diagrams": {
