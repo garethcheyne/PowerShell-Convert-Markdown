@@ -15,6 +15,10 @@
       "description": "Label for this style. Shown in verbose output and in the Style property of the result object, so you can tell which file was picked up.",
       "default": "Default"
     },
+    "theme": {
+      "type": "string",
+      "description": "A theme to build on: a folder name under ~/.convertmarkdown/themes (or $env:CONVERTMARKDOWN_THEMES), or a path to a theme folder or theme.json. The theme's keys override the built-in defaults, and every other key in this file overrides the theme - so a style file that selects a theme should carry only what differs. -Theme on the command line takes precedence."
+    },
     "page": {
       "type": "object",
       "description": "Page geometry.",
@@ -26,6 +30,15 @@
           "maximum": 50,
           "default": 10,
           "description": "Page margin in millimetres, applied to all four sides. Header and footer sit at half this value (floored at 8pt) so they never collide with the body."
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "Portrait",
+            "Landscape"
+          ],
+          "default": "Portrait",
+          "description": "Page orientation for the whole document, title page included. -Orientation overrides it."
         }
       }
     },
@@ -43,6 +56,11 @@
           "type": "string",
           "default": "Segoe UI Semibold",
           "description": "Headings h1-h3. Falls back to the body font if unavailable."
+        },
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "Title page headline, e.g. a light weight such as 'Segoe UI Light'. Empty means the heading font."
         },
         "mono": {
           "type": "string",
@@ -67,13 +85,25 @@
           "type": "string",
           "pattern": "^#[0-9A-Fa-f]{6}$",
           "default": "#1F3864",
-          "description": "Primary brand colour. Used for h1/h2 text and the table header background."
+          "description": "Primary brand colour. Used for h1/h2 text (unless heading is set), the 'filled' table header background, and the title page kicker."
         },
         "accentSoft": {
           "type": "string",
           "pattern": "^#[0-9A-Fa-f]{6}$",
           "default": "#2E74B5",
           "description": "Secondary colour. Used for h3 text and the left rule on code blocks."
+        },
+        "heading": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "h1/h2 text and the title page headline. Empty means accent, which was the only option before - so existing styles are unchanged."
+        },
+        "muted": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#595959",
+          "description": "Secondary grey: table header labels in the 'rule' style, the title page standfirst and field labels."
         },
         "rule": {
           "type": "string",
@@ -105,6 +135,65 @@
       "type": "object",
       "description": "US-spelling alias for 'colours'. Same keys."
     },
+    "tables": {
+      "type": "object",
+      "description": "Data tables.",
+      "additionalProperties": false,
+      "properties": {
+        "headerStyle": {
+          "type": "string",
+          "enum": [
+            "filled",
+            "rule"
+          ],
+          "default": "filled",
+          "description": "'filled': header row in the accent colour with white text, boxed cells. 'rule': a lighter report style - small uppercase muted labels over a rule, rows divided by hairlines."
+        }
+      }
+    },
+    "cover": {
+      "type": "object",
+      "description": "The title page (-TitlePage): a full-bleed panel with logo, kicker, title and standfirst, then frontmatter fields along the bottom. Title comes from frontmatter 'title' (else the first # heading), standfirst from 'subtitle' or 'excerpt', kicker from 'kicker' or cover.kicker.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Add a title page without being asked. -TitlePage and -NoTitlePage override it per document."
+        },
+        "logo": {
+          "type": "string",
+          "default": "",
+          "description": "PNG or JPG for the top of the panel, relative to the file that names it. Empty draws a short accent-and-rule bar instead."
+        },
+        "logoWidthMm": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 180,
+          "default": 55,
+          "description": "Logo width in millimetres; height follows its proportions."
+        },
+        "kicker": {
+          "type": "string",
+          "default": "",
+          "description": "Small uppercase label above the title, used when the document's frontmatter has no 'kicker'."
+        },
+        "band": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "Panel colour. Empty means colours.band."
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Frontmatter keys to show along the bottom, in this order. Empty shows every field not already on the page, plus today's date if there is none."
+        }
+      }
+    },
     "diagrams": {
       "type": "object",
       "description": "Mermaid rendering. See the privacy note in the README before pointing this at a public service for confidential documents.",
@@ -112,7 +201,11 @@
       "properties": {
         "service": {
           "type": "string",
-          "enum": ["mermaid.ink", "kroki", "none"],
+          "enum": [
+            "mermaid.ink",
+            "kroki",
+            "none"
+          ],
           "default": "mermaid.ink",
           "description": "Where diagrams are rendered. 'mermaid.ink' and the public 'kroki' are third-party services and receive the source of every mermaid block. 'none' makes no network call and inserts a labelled placeholder instead - set this here if your documents are confidential, so the safe option is the default and rendering is the deliberate exception."
         },
@@ -130,7 +223,13 @@
         },
         "theme": {
           "type": "string",
-          "enum": ["base", "default", "neutral", "dark", "forest"],
+          "enum": [
+            "base",
+            "default",
+            "neutral",
+            "dark",
+            "forest"
+          ],
           "default": "base",
           "description": "Mermaid theme. 'base' is the only one that honours themeVariables, so it is required for matchDocumentPalette to have any effect. The named themes ignore your palette entirely and render in mermaid's own colours."
         },
@@ -138,6 +237,25 @@
           "type": "boolean",
           "default": true,
           "description": "Derive mermaid's colours and font from this style's palette, so diagrams look like part of the document rather than pasted in from elsewhere. Requires theme 'base'. A diagram carrying its own %%{init: ...}%% directive is left alone - explicit authoring wins."
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "description": "Embedding of Markdown images (![alt](path)) as Word pictures.",
+      "additionalProperties": false,
+      "properties": {
+        "maxWidthPx": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 2000,
+          "default": 640,
+          "description": "Maximum embedded image width in pixels. Wider images are scaled down with their aspect ratio preserved; narrower ones keep their natural size. 640 is the A4 text width at 96dpi with 10mm margins."
+        },
+        "allowRemote": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether images referenced by http(s) URL are downloaded and embedded. Set false so that only local images are used and the conversion makes no image network call; remote ones are skipped with a warning and a placeholder."
         }
       }
     }

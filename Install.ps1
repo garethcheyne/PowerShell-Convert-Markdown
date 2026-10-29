@@ -27,6 +27,15 @@
     Create a style file at this path without prompting. Use 'none' to skip the
     prompt entirely -- useful for unattended installs.
 
+.PARAMETER DefaultTheme
+    Make this theme the default for every document on this machine, by writing
+    { "theme": "<name>" } to ~/.convertmarkdown/style.json. An existing style file
+    is kept as style.json.bak.
+
+    Themes are folders under theming/ beside this script (gitignored, so brand
+    assets never reach the public repo). Every one found is copied to
+    ~/.convertmarkdown/themes on install, whether or not it is the default.
+
 .EXAMPLE
     .\Install.ps1
 
@@ -35,6 +44,9 @@
 
 .EXAMPLE
     .\Install.ps1 -StylePath none -SkipConnectivityTest
+
+.EXAMPLE
+    .\Install.ps1 -Force -DefaultTheme acme
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -47,7 +59,9 @@ param(
 
     [switch] $SkipConnectivityTest,
 
-    [string] $StylePath
+    [string] $StylePath,
+
+    [string] $DefaultTheme
 )
 
 $ErrorActionPreference = 'Stop'
@@ -187,6 +201,37 @@ Import-Module $moduleName -Force
 
 $profileStyle = Join-Path $HOME '.convertmarkdown\style.json'
 
+# -------------------------------------------------------------------- themes
+# theming/ is gitignored: a theme carries brand colours and a logo, which have no
+# place in a public repo. Copy whatever is there to the per-user theme folder, so
+# the theme works from any directory however the module was installed.
+$themeSource = Join-Path $sourceDir 'theming'
+$themeDest = Join-Path $HOME '.convertmarkdown\themes'
+if (Test-Path -LiteralPath $themeSource) {
+    foreach ($t in Get-ChildItem -LiteralPath $themeSource -Directory) {
+        if (-not (Test-Path -LiteralPath (Join-Path $t.FullName 'theme.json'))) { continue }
+        $target = Join-Path $themeDest $t.Name
+        if ($PSCmdlet.ShouldProcess($target, "Install theme '$($t.Name)'")) {
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+            Copy-Item -Path (Join-Path $t.FullName '*') -Destination $target -Recurse -Force
+            Write-Host "Theme   $($t.Name) -> $target" -ForegroundColor Green
+        }
+    }
+}
+
+if ($DefaultTheme) {
+    if ($PSCmdlet.ShouldProcess($profileStyle, "Make '$DefaultTheme' the default theme")) {
+        if (Test-Path -LiteralPath $profileStyle) {
+            Copy-Item -LiteralPath $profileStyle -Destination "$profileStyle.bak" -Force
+            Write-Host "Kept the previous style file as $profileStyle.bak" -ForegroundColor DarkGray
+        }
+        $created = New-ConvertMarkdownStyle -Path $profileStyle -Name $DefaultTheme -Theme $DefaultTheme -Force
+        Write-Host "Default theme: $DefaultTheme ($($created.FullName))" -ForegroundColor Green
+    }
+    # The theme choice is the style file; do not offer to create another.
+    $StylePath = 'none'
+}
+
 $chosen = $null
 if ($StylePath) {
     if ($StylePath -ne 'none') { $chosen = $StylePath }
@@ -241,3 +286,5 @@ Write-Host '  2. $env:CONVERTMARKDOWN_STYLE' -ForegroundColor DarkGray
 Write-Host '  3. .convertmarkdown.json beside the document' -ForegroundColor DarkGray
 Write-Host '  4. ~/.convertmarkdown/style.json' -ForegroundColor DarkGray
 Write-Host '  5. built-in defaults' -ForegroundColor DarkGray
+Write-Host 'A theme (-Theme, the style file''s "theme" key, or $env:CONVERTMARKDOWN_THEME)' -ForegroundColor DarkGray
+Write-Host 'sits under the style file: its keys override the defaults, the style file''s override it.' -ForegroundColor DarkGray

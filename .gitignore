@@ -5,6 +5,10 @@ INTERNAL-NOTES.md
 *.docx
 *.pdf
 
+# Private themes (brand colours and logos): installed per machine by Install.ps1,
+# never published
+theming/
+
 # Local style overrides
 style.json
 .convertmarkdown.json
