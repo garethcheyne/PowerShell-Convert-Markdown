@@ -128,6 +128,42 @@
           "pattern": "^#[0-9A-Fa-f]{6}$",
           "default": "#1F1F1F",
           "description": "Body text colour. Near-black rather than pure black prints better."
+        },
+        "h3": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "h3 text. Empty means accentSoft."
+        },
+        "link": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "Hyperlinks. Empty leaves Word's own blue."
+        },
+        "bullet": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "List bullets. Empty leaves them in the text colour."
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#A31515",
+          "description": "Inline code text."
+        },
+        "codeBg": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#F4F4F4",
+          "description": "Fill behind inline code."
+        },
+        "codeBlockBg": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "default": "#F7F7F9",
+          "description": "Fill behind code blocks."
         }
       }
     },
@@ -148,6 +184,128 @@
           ],
           "default": "filled",
           "description": "'filled': header row in the accent colour with white text, boxed cells. 'rule': a lighter report style - small uppercase muted labels over a rule, rows divided by hairlines."
+        },
+        "banded": {
+          "type": "boolean",
+          "default": true,
+          "description": "Tint alternate rows with colours.band."
+        },
+        "firstColumnBold": {
+          "type": "boolean",
+          "default": false,
+          "description": "Set the first column of every data table in bold."
+        }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "description": "How the document is put together. These are what turn a plain document into a report.",
+      "additionalProperties": false,
+      "properties": {
+        "sectionBreak": {
+          "type": "string",
+          "enum": ["none", "page"],
+          "default": "none",
+          "description": "'page' starts every h2 on a new page, as a report section."
+        },
+        "headingRules": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the rules under h1 and h2."
+        },
+        "h2SizePt": {
+          "type": "number",
+          "minimum": 8,
+          "maximum": 48,
+          "default": 14,
+          "description": "h2 size in points. Raise it when h2 is a page title."
+        },
+        "h3SizePt": {
+          "type": "number",
+          "minimum": 8,
+          "maximum": 36,
+          "default": 11.5,
+          "description": "h3 size in points."
+        },
+        "contents": {
+          "type": "string",
+          "enum": ["none", "word", "cards"],
+          "default": "none",
+          "description": "'none': contents only with -TableOfContents. 'word': always add Word's table of contents. 'cards': a numbered two-column contents page built from the h2s and their kickers, also used for -TableOfContents."
+        },
+        "contentsKicker": {
+          "type": "string",
+          "default": "Contents",
+          "description": "Label above the title of a 'cards' contents page."
+        },
+        "contentsTitle": {
+          "type": "string",
+          "default": "What this document covers",
+          "description": "Title of a 'cards' contents page."
+        },
+        "callouts": {
+          "type": "string",
+          "enum": ["github", "brand"],
+          "default": "github",
+          "description": "'github': the alert colours and icons. 'brand': an accent bar on colours.band under a small uppercase label."
+        }
+      }
+    },
+    "header": {
+      "type": "object",
+      "description": "The running header on every body page. Templates can use {title}, {kicker}, {date}, {today}, {page}, {pages} and any frontmatter key. A placeholder with no value disappears, along with the separator beside it.",
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "type": "string",
+          "default": "",
+          "description": "Text at the left of the header."
+        },
+        "right": {
+          "type": "string",
+          "default": "{title}",
+          "description": "Text at the right of the header."
+        },
+        "leftColour": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "Colour of the left text. Empty means grey."
+        },
+        "rightColour": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "Colour of the right text. Empty means grey."
+        },
+        "ruleColour": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "Colour of the hairline under the header. Empty means black."
+        }
+      }
+    },
+    "footer": {
+      "type": "object",
+      "description": "The running footer on every body page. Same placeholders as the header.",
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "type": "string",
+          "default": "{today}",
+          "description": "Text at the left of the footer. {today} is the conversion date as yyyy-MM-dd; {date} is the frontmatter date, else today written out."
+        },
+        "right": {
+          "type": "string",
+          "default": "Page {page} of {pages}",
+          "description": "Text at the right of the footer."
+        },
+        "colour": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "default": "",
+          "description": "Footer text colour. Empty means grey."
         }
       }
     },
@@ -191,6 +349,14 @@
           },
           "default": [],
           "description": "Frontmatter keys to show along the bottom, in this order. Empty shows every field not already on the page, plus today's date if there is none."
+        },
+        "panelFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Frontmatter keys to show on the panel under the standfirst, such as a classification, instead of along the bottom."
         }
       }
     },

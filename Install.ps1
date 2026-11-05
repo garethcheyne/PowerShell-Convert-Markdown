@@ -34,7 +34,8 @@
 
     Themes are folders under theming/ beside this script (gitignored, so brand
     assets never reach the public repo). Every one found is copied to
-    ~/.convertmarkdown/themes on install, whether or not it is the default.
+    ~/.convertmarkdown/themes on install, whether or not it is the default. The
+    sample themes under themes/ ship with the module and can be named here too.
 
 .EXAMPLE
     .\Install.ps1
@@ -137,6 +138,12 @@ else {
     if ($PSCmdlet.ShouldProcess($destDir, 'Copy module')) {
         New-Item -ItemType Directory -Path $destDir -Force | Out-Null
         Copy-Item -Path (Join-Path $sourceDir "$moduleName.ps*1") -Destination $destDir -Force
+        # The sample themes ship with the module. Private ones stay under theming/,
+        # which is handled below and never copied into the module folder.
+        $sampleThemes = Join-Path $sourceDir 'themes'
+        if (Test-Path -LiteralPath $sampleThemes) {
+            Copy-Item -LiteralPath $sampleThemes -Destination $destDir -Recurse -Force
+        }
         Write-Host "Installed to $destDir" -ForegroundColor Green
     }
 }

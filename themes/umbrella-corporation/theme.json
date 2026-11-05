@@ -1,0 +1,79 @@
+{
+  "$schema": "../../style.schema.json",
+
+  "name": "Umbrella Corporation",
+
+  "page": {
+    "orientation": "Landscape",
+    "marginMm": 18
+  },
+
+  "fonts": {
+    "body": "Segoe UI",
+    "heading": "Segoe UI Semibold",
+    "title": "Segoe UI Light",
+    "mono": "Consolas",
+    "bodySizePt": 10
+  },
+
+  "colours": {
+    "accent": "#A6192E",
+    "accentSoft": "#A6192E",
+    "heading": "#1C1D22",
+    "muted": "#62646C",
+    "rule": "#1C1D22",
+    "border": "#D8D9DD",
+    "band": "#F6F5F4",
+    "text": "#2E2F35",
+    "h3": "#1C1D22",
+    "link": "#A6192E",
+    "bullet": "#A6192E",
+    "code": "#A6192E",
+    "codeBg": "#F6F5F4",
+    "codeBlockBg": "#F6F5F4"
+  },
+
+  "tables": {
+    "headerStyle": "rule",
+    "banded": false,
+    "firstColumnBold": true
+  },
+
+  "layout": {
+    "sectionBreak": "page",
+    "headingRules": false,
+    "h2SizePt": 21,
+    "h3SizePt": 12,
+    "contents": "cards",
+    "callouts": "brand"
+  },
+
+  "header": {
+    "left": "{title}",
+    "right": "{kicker} · {classification}",
+    "leftColour": "#1C1D22",
+    "rightColour": "#A6192E",
+    "ruleColour": "#D8D9DD"
+  },
+
+  "footer": {
+    "left": "{status} · {date}",
+    "right": "Page {page}/{pages}",
+    "colour": "#62646C"
+  },
+
+  "cover": {
+    "enabled": true,
+    "logo": "logo.png",
+    "logoWidthMm": 62,
+    "panelFields": ["classification"]
+  },
+
+  "diagrams": {
+    "maxWidthPx": 900
+  },
+
+  "images": {
+    "maxWidthPx": 1000
+  }
+}

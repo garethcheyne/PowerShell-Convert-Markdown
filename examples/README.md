@@ -23,6 +23,7 @@ Generated `.docx` and `.pdf` files are gitignored, so converting in place is saf
 | [nextdocs-page.md](nextdocs-page.md) | A realistic NextDocs documentation page — frontmatter, callouts, steps, tabs, a diff, a restricted section |
 | [styled.md](styled.md) | The same content under a custom style file, showing what the palette changes |
 | [edge-cases.md](edge-cases.md) | Awkward but valid input — steps past ten, every HTTP method, gallery variants, a deliberately missing image, unicode, nested blocks |
+| [umbrella-report.md](umbrella-report.md) | A landscape report for a fictional company: kickers, tiles, a step strip, columns and a named callout. Convert it with `-Theme umbrella-corporation` |
 
 These files are also the test corpus. `..\tests\Invoke-Tests.ps1` asserts that every
 block type, callout type and inline directive appears somewhere in this folder, so
