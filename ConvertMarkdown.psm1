@@ -13,7 +13,7 @@
 
 Set-StrictMode -Version Latest
 
-$script:Version = '2026.10.29'
+$script:Version = '2026.11.06'
 
 #region ---------------------------------------------------------- diagrams
 
@@ -75,7 +75,8 @@ function Invoke-MermaidRender {
             $encoded = ConvertTo-Base64Url -Bytes $utf8       # plain base64url also accepted
         }
 
-        $resp = Invoke-WebRequest -Uri "$base/img/$encoded`?type=png&bgColor=FFFFFF" -Method Get `
+        $uri = "$base/img/$encoded`?type=png&bgColor=FFFFFF"
+        $resp = Invoke-WebRequest -Uri $uri -Method Get `
             -TimeoutSec $TimeoutSec -MaximumRedirection 2 -ErrorAction Stop
     }
 
@@ -83,6 +84,28 @@ function Invoke-MermaidRender {
     if ($bytes -isnot [byte[]]) { $bytes = [Text.Encoding]::UTF8.GetBytes([string]$bytes) }
     if ($bytes.Length -lt 8 -or $bytes[0] -ne 0x89 -or $bytes[1] -ne 0x50) {
         throw "response was not a PNG ($($bytes.Length) bytes)"
+    }
+
+    # At 96dpi a diagram looks soft in print, so ask again at double the pixels. The
+    # service only scales when told a width, and the first response is how we learn it.
+    # The first image is still good if this fails, so a failure here is not an error.
+    # $script:mermaidWidthPx is the width to display it at; Word's own idea of a picture's
+    # size is no use, because it has already capped anything wider than the page.
+    $script:mermaidWidthPx = 0
+    if ($Service -ne 'kroki' -and $bytes.Length -gt 24) {
+        $width = ([int]$bytes[16] -shl 24) + ([int]$bytes[17] -shl 16) + ([int]$bytes[18] -shl 8) + [int]$bytes[19]
+        try {
+            $sharp = (Invoke-WebRequest -Uri "$uri&width=$width&scale=2" -Method Get `
+                    -TimeoutSec $TimeoutSec -MaximumRedirection 2 -ErrorAction Stop).Content
+            if ($sharp -is [byte[]] -and $sharp.Length -gt 24 -and $sharp[0] -eq 0x89 -and $sharp[1] -eq 0x50) {
+                $sharpWidth = ([int]$sharp[16] -shl 24) + ([int]$sharp[17] -shl 16) + ([int]$sharp[18] -shl 8) + [int]$sharp[19]
+                if ($width -gt 0 -and $sharpWidth -gt $width) {
+                    $script:mermaidWidthPx = $width
+                    return $sharp
+                }
+            }
+        }
+        catch { Write-Verbose "Keeping the standard-resolution diagram: $($_.Exception.Message)" }
     }
     return $bytes
 }
@@ -123,10 +146,53 @@ function Get-DefaultStyle {
             border     = '#B4C6E7'
             band       = '#F2F5FA'
             text       = '#1F1F1F'
+            # h3 text. Empty means accentSoft.
+            h3         = ''
+            # Hyperlinks and list bullets. Empty leaves Word's own.
+            link       = ''
+            bullet     = ''
+            # Inline code, and the fill behind code and code blocks.
+            code       = '#A31515'
+            codeBg     = '#F4F4F4'
+            codeBlockBg = '#F7F7F9'
         }
         tables   = [ordered]@{
             # 'filled': accent header row. 'rule': small uppercase labels over a rule.
-            headerStyle = 'filled'
+            headerStyle     = 'filled'
+            # Alternate rows tinted with colours.band.
+            banded          = $true
+            firstColumnBold = $false
+        }
+        layout   = [ordered]@{
+            # 'page' starts every h2 on a new page, as a report section.
+            sectionBreak  = 'none'
+            # The rules under h1 and h2.
+            headingRules  = $true
+            h2SizePt      = 14
+            h3SizePt      = 11.5
+            # 'none' (only -TableOfContents adds one), 'word', or 'cards' for a numbered
+            # two-column contents page built from the h2s and their kickers.
+            contents      = 'none'
+            contentsKicker = 'Contents'
+            contentsTitle = 'What this document covers'
+            # 'github': the alert palette. 'brand': accent bar on colours.band.
+            callouts      = 'github'
+        }
+        # {title} {kicker} {date} {today} {page} {pages}, or any frontmatter key.
+        # A placeholder with no value disappears, along with the separator beside it.
+        header   = [ordered]@{
+            left        = ''
+            right       = '{title}'
+            # Empty means the grey the running header has always been.
+            leftColour  = ''
+            rightColour = ''
+            # The hairline under the header. Empty leaves it black.
+            ruleColour  = ''
+        }
+        footer   = [ordered]@{
+            left   = '{today}'
+            right  = 'Page {page} of {pages}'
+            colour = ''
         }
         cover    = [ordered]@{
             enabled     = $false
@@ -138,6 +204,8 @@ function Get-DefaultStyle {
             band        = ''
             # Frontmatter keys to show along the bottom, in order. Empty shows them all.
             fields      = @()
+            # Frontmatter keys to show on the panel under the standfirst instead.
+            panelFields = @()
         }
         diagrams = [ordered]@{
             service              = 'mermaid.ink'
@@ -290,6 +358,9 @@ function Get-ThemeSearchPath {
     # A -Link install points the module at the working copy, so its theming/ folder
     # is usable without installing the theme separately.
     $dirs.Add((Join-Path $PSScriptRoot 'theming'))
+    # The sample themes that ship with the module. Last, so a private theme of the
+    # same name always wins.
+    $dirs.Add((Join-Path $PSScriptRoot 'themes'))
     $dirs
 }
 
@@ -333,7 +404,7 @@ function Merge-StyleLayer {
         [Parameter(Mandatory)][string] $BaseDir
     )
 
-    foreach ($section in @('page', 'fonts', 'colours', 'tables', 'cover', 'diagrams', 'images')) {
+    foreach ($section in @('page', 'fonts', 'colours', 'tables', 'layout', 'header', 'footer', 'cover', 'diagrams', 'images')) {
         if ($Layer.Contains($section) -and $Layer[$section]) {
             foreach ($k in $Layer[$section].Keys) {
                 $Style[$section][$k] = $Layer[$section][$k]
@@ -499,6 +570,9 @@ function New-ConvertMarkdownStyle {
             fonts     = $defaults.fonts
             colours   = $defaults.colours
             tables    = $defaults.tables
+            layout    = $defaults.layout
+            header    = $defaults.header
+            footer    = $defaults.footer
             cover     = $defaults.cover
             diagrams  = $defaults.diagrams
             images    = $defaults.images
@@ -539,7 +613,13 @@ function New-ConvertMarkdownStyle {
 # something that still reads when nothing can be clicked - see each builder for
 # what it becomes.
 
-$script:NdBlockTypes = @('tabs', 'details', 'steps', 'filetree', 'api', 'diff', 'gallery', 'sketch', 'release')
+$script:NdBlockTypes = @('tabs', 'details', 'steps', 'filetree', 'api', 'diff', 'gallery', 'sketch', 'release',
+    'lead', 'stats', 'strip', 'columns')
+
+# Set by Convert-Markdown from the style. Left as they are here, callouts use the
+# GitHub palette below, which is also what a direct call to the builders gets.
+$script:NdBrandCallout = $null
+$script:NdStripRule = '#C8102E'
 
 # GitHub's own alert palette, so a printed callout is recognisable to anyone who
 # has seen the same document on the web.
@@ -644,8 +724,21 @@ function Split-NdHeader {
 function New-NdCallout {
     # One cell with a thick left border, not a narrow spacer cell beside it: Word
     # ignores a sub-point column width and stretches the spacer into a slab.
-    param([string]$Type, [string]$Body)
+    param([string]$Type, [string]$Body, [string]$Label)
     $c = $script:NdCallout[$Type]
+    $title = if ($Label) { $Label } else { $c.Label }
+
+    # The brand form drops the alert palette and icon: one quiet accent bar on the
+    # band colour, under a small uppercase label. Upper-cased here for the same reason
+    # as the title page - Word's import does not reliably honour text-transform.
+    if ($script:NdBrandCallout) {
+        return '<table class="nd callout" summary="nd">' +
+        ('<tr><td class="callout-body" style="background:{0};border-left:4pt solid {1};">' -f $script:NdBrandCallout.Tint, $script:NdBrandCallout.Colour) +
+        ('<p class="callout-label" style="color:{0};">{1}</p>' -f $script:NdBrandCallout.Colour, [Net.WebUtility]::HtmlEncode($title.ToUpperInvariant())) +
+        (ConvertTo-NdHtml $Body) + '</td></tr></table>'
+    }
+
+    if ($Label) { $c = @{ Colour = $c.Colour; Tint = $c.Tint; Glyph = $c.Glyph; Label = [Net.WebUtility]::HtmlEncode($Label) } }
     '<table class="nd callout" summary="nd">' +
     ('<tr><td class="callout-body" style="background:{0};border-left:4pt solid {1};">' -f $c.Tint, $c.Colour) +
     ('<p class="callout-title" style="color:{0};"><span class="sym">{1}</span>&#160;{2}</p>' -f $c.Colour, $c.Glyph, $c.Label) +
@@ -677,6 +770,106 @@ function New-NdSteps {
     # No headings inside: nothing to number, so leave the content as written.
     if ($n -eq 0) { return (ConvertTo-NdHtml $Body) }
     $lead + '<table class="nd steps" summary="nd">' + ($rows -join '') + '</table>'
+}
+
+function Split-NdCell {
+    # "a | b | c" on one line of a :::stats or :::strip block. An escaped \| stays as
+    # text, so a value can hold a pipe.
+    param([string]$Line)
+    @([regex]::Split($Line, '(?<!\\)\|') | ForEach-Object { ($_ -replace '\\\|', '|').Trim() })
+}
+
+function New-NdLead {
+    # An opening paragraph set larger than the body.
+    param([string]$Body)
+    '<p class="lead">' + (ConvertTo-NdInlineHtml ($Body.Trim() -replace '\s*\n\s*', ' ')) + '</p>'
+}
+
+function New-NdGapCell {
+    # A real column, because a table's cells cannot be pulled apart any other way: Word
+    # drops border-spacing on import.
+    param([double]$WidthPercent)
+    '<td class="tile-gap" width="{0}%"><p class="tile-fill">&#160;</p></td>' -f $WidthPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function New-NdStats {
+    # One row of tiles: label | value | caption, one tile per line.
+    param([string]$Body)
+    $items = @($Body -split "`n" | Where-Object { $_.Trim() })
+    if ($items.Count -eq 0) { return '' }
+    $gap = 1.5
+    $width = (100 - ($gap * ($items.Count - 1))) / $items.Count
+    $w = $width.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture)
+
+    $cells = [Collections.Generic.List[string]]::new()
+    foreach ($line in $items) {
+        $p = @(Split-NdCell $line)
+        $label = [Net.WebUtility]::HtmlEncode($p[0].ToUpperInvariant())
+        $value = if ($p.Count -gt 1) { ConvertTo-NdInlineHtml $p[1] } else { '&#160;' }
+        $note = if ($p.Count -gt 2) { '<p class="stat-note">' + (ConvertTo-NdInlineHtml $p[2]) + '</p>' } else { '' }
+        if ($cells.Count) { $cells.Add((New-NdGapCell $gap)) }
+        $cells.Add(('<td class="stat" width="{0}%"><p class="stat-label">{1}</p><p class="stat-value">{2}</p>{3}</td>' -f $w, $label, $value, $note))
+    }
+    '<table class="nd stats" summary="nd"><tr>' + ($cells -join '') + '</tr></table>'
+}
+
+function New-NdStrip {
+    # A row of steps read left to right: label | title | text, one per line. A leading
+    # "!" marks the one that matters, such as a gate, in the rule colour. "strip 5" on
+    # the opening line wraps every five, so a long sequence stays readable.
+    param([string]$Header, [string]$Body, [string]$RuleColour = '#C8102E')
+    $items = @($Body -split "`n" | Where-Object { $_.Trim() })
+    if ($items.Count -eq 0) { return '' }
+    $perRow = if ($Header.Trim() -match '^\d+$') { [int]$Header.Trim() } else { [Math]::Min($items.Count, 6) }
+    $perRow = [Math]::Max(1, [Math]::Min(8, $perRow))
+
+    $gap = 1
+    $width = (100 - ($gap * ($perRow - 1))) / $perRow
+    $w = $width.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture)
+
+    $tables = [Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt $items.Count; $i += $perRow) {
+        $cells = [Collections.Generic.List[string]]::new()
+        $slice = @($items[$i..([Math]::Min($i + $perRow - 1, $items.Count - 1))])
+        foreach ($raw in $slice) {
+            $line = $raw.Trim()
+            $marked = $line.StartsWith('!')
+            if ($marked) { $line = $line.Substring(1).Trim() }
+            $p = @(Split-NdCell $line)
+            $label = [Net.WebUtility]::HtmlEncode($p[0].ToUpperInvariant())
+            $title = if ($p.Count -gt 1) { '<p class="strip-title">' + (ConvertTo-NdInlineHtml $p[1]) + '</p>' } else { '' }
+            $text = if ($p.Count -gt 2) { '<p class="strip-text">' + (ConvertTo-NdInlineHtml $p[2]) + '</p>' } else { '' }
+            # Inline, because the colour varies per cell and Word flattens the sheet.
+            $topStyle = if ($marked) { " style=""border-top:2.25pt solid $RuleColour;""" } else { '' }
+            $labelStyle = if ($marked) { " style=""color:$RuleColour;""" } else { '' }
+            if ($cells.Count) { $cells.Add((New-NdGapCell $gap)) }
+            $cells.Add(('<td class="strip" width="{0}%"{1}><p class="strip-label"{2}>{3}</p>{4}{5}</td>' -f $w, $topStyle, $labelStyle, $label, $title, $text))
+        }
+        # Keep a short last row in the same columns as the rows above it.
+        for ($pad = $slice.Count; $pad -lt $perRow; $pad++) {
+            $cells.Add((New-NdGapCell $gap))
+            $cells.Add((New-NdGapCell $width))
+        }
+        $tables.Add('<table class="nd strips" summary="nd"><tr>' + ($cells -join '') + '</tr></table>')
+    }
+    # A paragraph between them, or Word welds adjacent tables into one.
+    $tables -join '<p class="strip-gap">&#160;</p>'
+}
+
+function New-NdColumns {
+    # Side-by-side sections, split on a "---" line. Markdown works as normal inside.
+    param([string]$Body)
+    $parts = @([regex]::Split($Body, '(?m)^[ \t]*---[ \t]*$') | Where-Object { $_.Trim() })
+    if ($parts.Count -lt 2) { return (ConvertTo-NdHtml $Body) }
+    $gap = 4
+    $width = (100 - ($gap * ($parts.Count - 1))) / $parts.Count
+    $w = $width.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture)
+    $cells = [Collections.Generic.List[string]]::new()
+    foreach ($part in $parts) {
+        if ($cells.Count) { $cells.Add((New-NdGapCell $gap)) }
+        $cells.Add(('<td class="col" width="{0}%">{1}</td>' -f $w, (ConvertTo-NdHtml $part)))
+    }
+    '<table class="nd columns" summary="nd"><tr>' + ($cells -join '') + '</tr></table>'
 }
 
 function New-NdTabs {
@@ -1017,6 +1210,15 @@ function Convert-NdInline {
     $inFence = $false
     $out = foreach ($line in ($Markdown -split "`n")) {
         if ($line -match '^[ \t]*(```|~~~)') { $inFence = -not $inFence; $line; continue }
+
+        # A section label on its own line above a heading. The blank line it leaves
+        # ends the HTML block, or Markdig would take the heading as raw text too.
+        if (-not $inFence -and $line -match '^[ \t]*:kicker\[(?<t>[^\]]+)\][ \t]*$') {
+            '<p class="kicker">' + [Net.WebUtility]::HtmlEncode($Matches['t'].Trim().ToUpperInvariant()) + '</p>'
+            ''
+            continue
+        }
+
         if ($inFence -or $line -notmatch ':kbd\[|:badge\[|:#fluentui') { $line; continue }
 
         $work = $line
@@ -1076,13 +1278,14 @@ function Expand-NdBlock {
 
     # --- callouts: > [!TYPE] plus the blockquote lines under it
     $fences = Get-NdFenceRange $Markdown
-    $calloutRe = '(?m)^[ \t]*>[ \t]*\[!(?<t>NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*$(?<rest>(?:\r?\n[ \t]*>[^\n]*)*)'
+    # Text after the marker names the callout: "> [!NOTE] Why in-house".
+    $calloutRe = '(?m)^[ \t]*>[ \t]*\[!(?<t>NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?<label>[^\n]*?)[ \t]*$(?<rest>(?:\r?\n[ \t]*>[^\n]*)*)'
     $Markdown = [regex]::Replace($Markdown, $calloutRe, {
             param($m)
             if (Test-NdInFence $fences $m.Index) { return $m.Value }
             $body = (($m.Groups['rest'].Value -split "`n") | ForEach-Object { $_ -replace '^[ \t]*>[ \t]?', '' }) -join "`n"
             $counts.Callout++
-            & $emit (New-NdCallout -Type $m.Groups['t'].Value.ToLowerInvariant() -Body $body)
+            & $emit (New-NdCallout -Type $m.Groups['t'].Value.ToLowerInvariant() -Body $body -Label $m.Groups['label'].Value)
         })
 
     # --- ::: blocks, spliced back in reverse so earlier indices stay valid
@@ -1106,6 +1309,10 @@ function Expand-NdBlock {
             'gallery' { New-NdGallery -Header $hdr -Body $body -Alt $ImageAlt }
             'sketch' { New-NdSketch -Header $hdr -Body $body }
             'release' { New-NdRelease -Body $body }
+            'lead' { New-NdLead -Body $body }
+            'stats' { New-NdStats -Body $body }
+            'strip' { New-NdStrip -Header $hdr -Body $body -RuleColour $script:NdStripRule }
+            'columns' { New-NdColumns -Body $body }
             default { ConvertTo-NdHtml $body }
         }
         $counts.Block++
@@ -1153,6 +1360,8 @@ function Get-NdExtendedCss {
     $fontBody = $Style.fonts.body
     $fontMono = $Style.fonts.mono
     $sizeBody = $Style.fonts.bodySizePt
+    # A hand-built style may predate the layout section.
+    if (-not $Style.Contains('layout')) { $Style = [hashtable]$Style.Clone(); $Style['layout'] = (Get-DefaultStyle).layout }
 
     $mono = "$fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace"
     $sym = "'Segoe UI Symbol', 'Segoe UI', $fontBody, sans-serif"
@@ -1166,6 +1375,45 @@ p.excerpt { color: #595959; font-size: 11.5pt; margin: -6pt 0 12pt 0; }
 
 td.callout-body { border: none; padding: 7pt 10pt 3pt 10pt; vertical-align: top; }
 p.callout-title { font-weight: 700; margin: 0 0 3pt 0; }
+p.callout-label { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif; font-size: 7.5pt;
+     letter-spacing: 1.2pt; margin: 0 0 3pt 0; }
+
+p.kicker { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif; font-size: 7.5pt; color: $accent;
+     letter-spacing: 1.5pt; margin: 0 0 3pt 0; page-break-after: avoid; }
+p.lead { font-size: 13pt; color: $($Style.colours.muted); line-height: 1.5; margin: 0 0 12pt 0; }
+
+td.tile-gap { border: none; padding: 0; font-size: 1pt; background: #FFFFFF; }
+p.tile-fill { font-size: 1pt; line-height: 1pt; margin: 0; }
+td.stat { border: 0.5pt solid $border; padding: 8pt 10pt; vertical-align: top; }
+p.stat-label { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif; font-size: 7.5pt;
+     color: $($Style.colours.muted); letter-spacing: 1.2pt; margin: 0 0 4pt 0; }
+p.stat-value { font-family: '$(if ($Style.fonts.title) { $Style.fonts.title } else { $Style.fonts.heading })', '$fontBody', sans-serif;
+     font-size: 24pt; color: $accent; line-height: 1.1; margin: 0 0 4pt 0; }
+p.stat-note { font-size: 8.5pt; color: $($Style.colours.muted); margin: 0; }
+
+td.strip { background: $band; border: 0.5pt solid $border; border-top: 2.25pt solid $accent;
+     padding: 6pt 8pt; vertical-align: top; }
+p.strip-label { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif; font-size: 7.5pt; color: $accent;
+     letter-spacing: 1.2pt; margin: 0 0 2pt 0; }
+p.strip-title { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif; font-size: 10pt;
+     color: $(if ($Style.colours.heading) { $Style.colours.heading } else { $accent }); margin: 0 0 2pt 0; }
+p.strip-text { font-size: 8.5pt; color: $($Style.colours.muted); margin: 0; }
+p.strip-gap { font-size: 4pt; line-height: 6pt; margin: 0; }
+
+td.col { border: none; padding: 0; vertical-align: top; }
+
+p.contents-title { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif;
+     font-size: $($Style.layout.h2SizePt)pt; font-weight: 700;
+     color: $(if ($Style.colours.heading) { $Style.colours.heading } else { $accent }); margin: 0 0 12pt 0; }
+td.toc-num { border: none; border-bottom: 0.5pt solid $border; padding: 3pt 0; vertical-align: middle; }
+td.toc-text { border: none; border-bottom: 0.5pt solid $border; padding: 3pt 0; vertical-align: middle; }
+td.toc-page { border: none; border-bottom: 0.5pt solid $border; padding: 3pt 0; vertical-align: middle; }
+p.toc-num { font-family: '$(if ($Style.fonts.title) { $Style.fonts.title } else { $Style.fonts.heading })', '$fontBody', sans-serif;
+     font-size: 15pt; color: $accent; margin: 0; }
+p.toc-page { color: $($Style.colours.muted); font-size: 9pt; text-align: right; margin: 0; }
+p.toc-label { font-family: '$($Style.fonts.heading)', '$fontBody', sans-serif; font-size: 7pt;
+     color: $($Style.colours.muted); letter-spacing: 1.2pt; margin: 0; }
+p.toc-title { color: $text; margin: 0; }
 
 td.num { border: none; padding: 1pt 7pt 9pt 0; vertical-align: top; width: 22pt; }
 td.step { border: none; padding: 0 0 9pt 0; vertical-align: top; }
@@ -1255,6 +1503,8 @@ function Get-CoverField {
     $out = [ordered]@{}
     if (-not $Fields) { $Fields = [ordered]@{} }
     $wanted = @($Style.cover.fields | Where-Object { $_ })
+    # Shown on the panel instead, so they are not printed twice.
+    $onPanel = @($(if ($Style.cover.Contains('panelFields')) { $Style.cover.panelFields }) | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() })
 
     if ($wanted.Count) {
         foreach ($k in $wanted) {
@@ -1266,6 +1516,7 @@ function Get-CoverField {
 
     foreach ($k in $Fields.Keys) {
         if ($k.ToLowerInvariant() -in $script:CoverSkipField) { continue }
+        if ($k.ToLowerInvariant() -in $onPanel) { continue }
         if (-not $Fields[$k]) { continue }
         $out[(ConvertTo-CoverLabel $k)] = [string]$Fields[$k]
     }
@@ -1285,7 +1536,9 @@ function New-CoverHtml {
         [AllowNull()] $Fields,
         [AllowEmptyString()][string]$LogoToken,
         # Without a logo: a short two-colour bar, accent then rule.
-        [string[]]$BarColours = @('#1F3864', '#C8102E')
+        [string[]]$BarColours = @('#1F3864', '#C8102E'),
+        # Label/value pairs printed on the panel under the standfirst.
+        [AllowNull()] $PanelFields
     )
     $enc = { param($s) [Net.WebUtility]::HtmlEncode([string]$s) }
     $panel = [Text.StringBuilder]::new()
@@ -1299,6 +1552,9 @@ function New-CoverHtml {
     if ($Kicker) { [void]$panel.Append("<p class=""cover-kicker"">$(& $enc $Kicker.ToUpperInvariant())</p>") }
     [void]$panel.Append("<p class=""cover-title"">$(& $enc $Title)</p>")
     if ($Subtitle) { [void]$panel.Append("<p class=""cover-sub"">$(ConvertTo-NdInlineHtml $Subtitle)</p>") }
+    foreach ($k in @(if ($PanelFields) { $PanelFields.Keys })) {
+        [void]$panel.Append("<p class=""cover-panel-label"">$(& $enc $k.ToUpperInvariant())</p><p class=""cover-value"">$(ConvertTo-NdInlineHtml $PanelFields[$k])</p>")
+    }
 
     $meta = '<p class="cover-value">&nbsp;</p>'
     $keys = @(if ($Fields) { $Fields.Keys })
@@ -1341,9 +1597,120 @@ p.cover-title { font-family: '$titleFont', '$($f.body)', sans-serif; font-size: 
 p.cover-sub { font-size: 13pt; color: $($c.muted); line-height: 1.3; margin: 0; }
 p.cover-label { font-family: '$($f.heading)', '$($f.body)', sans-serif; font-size: 7pt; color: $($c.muted);
      letter-spacing: 1pt; margin: 0 0 3pt 0; }
+p.cover-panel-label { font-family: '$($f.heading)', '$($f.body)', sans-serif; font-size: 7pt; color: $($c.muted);
+     letter-spacing: 1pt; margin: 18pt 0 3pt 0; }
 p.cover-value { font-size: 10pt; color: $($c.text); margin: 0; }
 p.cover-break { font-size: 1pt; line-height: 1pt; margin: 0; }
 "@
+}
+
+#endregion
+
+#region ------------------------------------------------- running header and contents
+
+function ConvertTo-WordColour {
+    # '#RRGGBB' to the BGR integer Font.Color wants. $null for empty or unparseable,
+    # so a caller can leave Word's own colour in place.
+    param([AllowEmptyString()][string]$Hex)
+    if ($Hex -notmatch '^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$') { return $null }
+    [Convert]::ToInt32($Matches[1], 16) + ([Convert]::ToInt32($Matches[2], 16) * 256) + ([Convert]::ToInt32($Matches[3], 16) * 65536)
+}
+
+function Expand-RunningText {
+    # Fills in a header or footer template. {page} and {pages} are left for the caller,
+    # who turns them into Word fields. A placeholder with no value goes, and so does
+    # the separator it leaves stranded: "{status} - {date}" with no status is just the
+    # date, rather than a date with a dash in front of it.
+    param(
+        [AllowEmptyString()][string]$Template,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Values
+    )
+    if (-not $Template) { return '' }
+    $text = [regex]::Replace($Template, '\{(?<k>[A-Za-z_][A-Za-z0-9_-]*)\}', {
+            param($m)
+            $key = $m.Groups['k'].Value
+            if ($key -in 'page', 'pages') { return $m.Value }
+            $hit = @($Values.Keys) | Where-Object { $_ -ieq $key } | Select-Object -First 1
+            if ($hit) { [string]$Values[$hit] } else { '' }
+        })
+    # Only separators the template itself wrote: one with space on both sides.
+    $sep = '[' + [char]0xB7 + '|' + [char]0x2013 + [char]0x2014 + '-]'
+    $text = [regex]::Replace($text, "^\s*(?:$sep\s+)+", '')
+    $text = [regex]::Replace($text, "(?:\s+$sep)+\s*$", '')
+    $text = [regex]::Replace($text, "(\s+$sep)(?:\s+$sep)+(?=\s)", '$1')
+    $text.Trim()
+}
+
+function Add-SectionMarker {
+    # Finds the h2 sections, gives each a token Word can find again once the document
+    # is open, and for a report layout starts each on its own page. A kicker sits above
+    # its heading, so the page break goes on the kicker when there is one.
+    #
+    # The first section normally stays where it is: the title page's section break, or
+    # the document title, has already put it at the top of a page. Contents force it on.
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Html,
+        [bool]$PageBreak,
+        [bool]$Contents
+    )
+    $sections = [Collections.Generic.List[object]]::new()
+    $re = '(?s)(?:<p class="kicker">(?<k>[^<]*)</p>\s*)?<h2(?<a>[^>]*)>(?<t>.*?)</h2>'
+    $out = [regex]::Replace($Html, $re, {
+            param($m)
+            $n = $sections.Count + 1
+            $kicker = $m.Groups['k'].Value
+            $sections.Add([pscustomobject]@{
+                    Number = $n
+                    Kicker = $kicker
+                    Title  = $m.Groups['t'].Value
+                    Token  = "@@MDSECTION$n@@"
+                    Page   = "@@MDSECTIONPAGE$n@@"
+                })
+            $break = ($PageBreak -and $n -gt 1) -or ($Contents -and $n -eq 1)
+            $style = if ($break) { ' style="page-break-before:always"' } else { '' }
+            $mark = if ($Contents) { "@@MDSECTION$n@@" } else { '' }
+            $h2 = "<h2$($m.Groups['a'].Value)$(if (-not $m.Groups['k'].Success) { $style })>$mark$($m.Groups['t'].Value)</h2>"
+            if ($m.Groups['k'].Success) { "<p class=""kicker""$style>$kicker</p>`n$h2" } else { $h2 }
+        })
+    # Where the first section opens, recomputed because the replace moved the text.
+    $first = [regex]::Match($out, '(?s)<p class="kicker"[^>]*>[^<]*</p>\s*<h2|<h2')
+    [pscustomobject]@{
+        Html       = $out
+        Sections   = $sections
+        FirstIndex = $(if ($first.Success) { $first.Index } else { -1 })
+    }
+}
+
+function New-ContentsHtml {
+    # A numbered two-column contents page. Each entry is number, kicker and title, then
+    # a page number: a token here, a PAGEREF field once Word has the document open. The
+    # entries are read down the left column and then the right.
+    param(
+        [Parameter(Mandatory)]$Sections,
+        [AllowEmptyString()][string]$Kicker,
+        [AllowEmptyString()][string]$Title
+    )
+    $entries = @($Sections)
+    if ($entries.Count -eq 0) { return '' }
+    $half = [int][Math]::Ceiling($entries.Count / 2)
+
+    $cell = {
+        param($e)
+        if (-not $e) { return (New-NdGapCell 6) + (New-NdGapCell 38) + (New-NdGapCell 4) }
+        $label = if ($e.Kicker) { "<p class=""toc-label"">$($e.Kicker)</p>" } else { '' }
+        ('<td class="toc-num" width="6%"><p class="toc-num">{0:00}</p></td><td class="toc-text" width="38%">{1}<p class="toc-title">{2}</p></td><td class="toc-page" width="4%"><p class="toc-page">{3}</p></td>' -f
+            $e.Number, $label, $e.Title, $e.Page)
+    }
+
+    $rows = for ($i = 0; $i -lt $half; $i++) {
+        $right = if (($i + $half) -lt $entries.Count) { $entries[$i + $half] } else { $null }
+        '<tr>' + (& $cell $entries[$i]) + (New-NdGapCell 4) + (& $cell $right) + '</tr>'
+    }
+
+    $head = ''
+    if ($Kicker) { $head += '<p class="kicker">' + [Net.WebUtility]::HtmlEncode($Kicker.ToUpperInvariant()) + '</p>' }
+    if ($Title) { $head += '<p class="contents-title">' + [Net.WebUtility]::HtmlEncode($Title) + '</p>' }
+    $head + '<table class="nd contents" summary="nd">' + ($rows -join '') + '</table>'
 }
 
 #endregion
@@ -1682,7 +2049,7 @@ function Convert-Markdown {
                     $script:tempFiles.Add($png)
 
                     $token = "@@MDDIAGRAM$($script:diagramNo)@@"
-                    $script:diagrams.Add([pscustomobject]@{ Token = $token; Path = $png; Label = $label })
+                    $script:diagrams.Add([pscustomobject]@{ Token = $token; Path = $png; Label = $label; WidthPx = $script:mermaidWidthPx })
 
                     $script:diagramsRendered++
                     Write-Verbose "$label rendered ($($bytes.Length) bytes)"
@@ -1794,6 +2161,14 @@ function Convert-Markdown {
         $imageAlt = @{}
         foreach ($img in $script:images) { $imageAlt[$img.Token] = $img.Alt }
 
+        # Module scope, so it has to be reset every run: a pipeline converts several
+        # documents, and the last one's theme must not leak into the next.
+        $script:NdBrandCallout = if ([string]$style.layout.callouts -eq 'brand') {
+            @{ Colour = $style.colours.accent; Tint = $style.colours.band }
+        }
+        else { $null }
+        $script:NdStripRule = $style.colours.rule
+
         $markdown = Convert-NdInline -Markdown $markdown
         $nd = Expand-NdBlock -Markdown $markdown -ImageAlt $imageAlt -LabelRestricted:(-not $ExcludeRestricted)
         $markdown = $nd.Markdown
@@ -1885,6 +2260,12 @@ function Convert-Markdown {
         $body = $body -replace '(?i)<del>', '<s>' -replace '(?i)</del>', '</s>'
         $body = $body -replace '(?i)<ins>', '<u>' -replace '(?i)</ins>', '</u>'
 
+        # A code block's <code> goes. Word drops the "pre code" descendant selector, so
+        # the plain "code" rule won instead: inline-code colour and a second grey band
+        # behind every line. The trailing newline goes too, or Word makes an empty last
+        # line from it.
+        $body = $body -replace '(?s)<pre><code[^>]*>', '<pre>' -replace '\r?\n?</code></pre>', '</pre>'
+
         # Task list checkboxes -> printable glyphs (Word renders <input> as a form field).
         $body = [regex]::Replace($body, '<input\b[^>]*type="checkbox"[^>]*>', {
                 param($m)
@@ -1892,15 +2273,42 @@ function Convert-Markdown {
                 '<span class="cb">' + $glyph + '</span>'
             })
 
+        # Task lists become plain paragraphs. Word ignores list-style on import, so as a
+        # list every item printed a bullet and then a checkbox. A list that nests another
+        # list is left alone, because flattening it would lose the nesting.
+        $body = [regex]::Replace($body, '(?s)<ul class="contains-task-list">(.*?)</ul>', {
+                param($m)
+                if ($m.Groups[1].Value -match '<[uo]l\b') { return $m.Value }
+                $items = $m.Groups[1].Value -replace '<li[^>]*>', '<p class="task-item">' -replace '</li>', '</p>'
+                # The last item carries the gap under the list.
+                $last = $items.LastIndexOf('<p class="task-item">')
+                if ($last -ge 0) { $items = $items.Remove($last, 21).Insert($last, '<p class="task-item" style="margin-bottom:10pt">') }
+                $items
+            })
+
+        # Two tables in a row need a paragraph between them. Word welds them into one
+        # otherwise, and keeps no gap even when it does not, because it drops table
+        # margins on import.
+        $body = [regex]::Replace($body, '</table>\s*(<table\b)', '</table><p class="strip-gap">&#160;</p>$1')
+
         # Banded table rows - Word ignores :nth-child(), so stripe them explicitly.
+        $banded = -not $style.tables.Contains('banded') -or [bool]$style.tables.banded
         $body = [regex]::Replace($body, '(?s)<tbody>.*?</tbody>', {
                 param($m)
                 $script:rowNo = 0
                 [regex]::Replace($m.Value, '<tr>', {
                         $script:rowNo++
-                        if ($script:rowNo % 2 -eq 0) { '<tr class="alt">' } else { '<tr>' }
+                        if ($banded -and $script:rowNo % 2 -eq 0) { '<tr class="alt">' } else { '<tr>' }
                     })
             })
+
+        # Bold is written into the cell because Word has no first-child selector.
+        if ($style.tables.Contains('firstColumnBold') -and $style.tables.firstColumnBold) {
+            $body = [regex]::Replace($body, '(?s)<tbody>.*?</tbody>', {
+                    param($m)
+                    [regex]::Replace($m.Value, '(?s)(<tr[^>]*>\s*<td[^>]*>)(.*?)(</td>)', '$1<strong>$2</strong>$3')
+                })
+        }
 
         # ----------------------------------------------------------- palette
         $accentRgb = $style.colours.accent
@@ -1926,17 +2334,50 @@ function Convert-Markdown {
             if ($coverOn) { $body = ([regex]'(?s)<h1[^>]*>.*?</h1>').Replace($body, '', 1) }
         }
 
+        $fields = if ($fm.Found) { $fm.Fields } else { [ordered]@{} }
+        $pick = { param($k) $hit = @($fields.Keys) | Where-Object { $_ -ieq $k } | Select-Object -First 1; if ($hit) { [string]$fields[$hit] } else { '' } }
+        $kicker = & $pick 'kicker'
+        if (-not $kicker) { $kicker = [string]$style.cover.kicker }
+
+        # What {placeholders} in the running header and footer can draw on.
+        $runningValues = [ordered]@{}
+        foreach ($k in $fields.Keys) { $runningValues[$k] = [string]$fields[$k] }
+        $runningValues['title'] = $title
+        $runningValues['kicker'] = $kicker
+        $runningValues['today'] = Get-Date -Format 'yyyy-MM-dd'
+        if (-not (& $pick 'date')) {
+            $runningValues['date'] = (Get-Date).ToString('d MMMM yyyy', [Globalization.CultureInfo]::InvariantCulture)
+        }
+
+        # ---------------------------------------------- sections and contents page
+        $contentsMode = [string]$style.layout.contents
+        $wantCards = $contentsMode -eq 'cards'
+        $wantWordToc = ($TableOfContents -and -not $wantCards) -or $contentsMode -eq 'word'
+        $pageSections = [string]$style.layout.sectionBreak -eq 'page'
+        $sectionList = @()
+        if ($pageSections -or $wantCards) {
+            $marked = Add-SectionMarker -Html $body -PageBreak $pageSections -Contents $wantCards
+            $body = $marked.Html
+            $sectionList = @($marked.Sections)
+            if ($wantCards -and $sectionList.Count -and $marked.FirstIndex -ge 0) {
+                $contentsHtml = New-ContentsHtml -Sections $sectionList -Kicker ([string]$style.layout.contentsKicker) `
+                    -Title ([string]$style.layout.contentsTitle)
+                $body = $body.Insert($marked.FirstIndex, $contentsHtml + "`n")
+            }
+        }
+
         $coverCss = ''
         if ($coverOn) {
-            $fields = if ($fm.Found) { $fm.Fields } else { [ordered]@{} }
-            $pick = { param($k) $hit = @($fields.Keys) | Where-Object { $_ -ieq $k } | Select-Object -First 1; if ($hit) { [string]$fields[$hit] } else { '' } }
             $subtitle = & $pick 'subtitle'
             if (-not $subtitle -and $fm.Found) { $subtitle = $fm.Excerpt }
-            $kicker = & $pick 'kicker'
-            if (-not $kicker) { $kicker = [string]$style.cover.kicker }
+            $panelFields = [ordered]@{}
+            foreach ($k in @($style.cover.panelFields | Where-Object { $_ })) {
+                $v = & $pick $k
+                if ($v) { $panelFields[(ConvertTo-CoverLabel $k)] = $v }
+            }
             $body = (New-CoverHtml -Title $title -Subtitle $subtitle -Kicker $kicker `
                     -Fields (Get-CoverField -Fields $fields -Style $style) -LogoToken $logoToken `
-                    -BarColours @($style.colours.accent, $style.colours.rule)) + $body
+                    -BarColours @($style.colours.accent, $style.colours.rule) -PanelFields $panelFields) + $body
             $coverCss = Get-CoverCss -Style $style
         }
 
@@ -1946,6 +2387,14 @@ function Convert-Markdown {
         $ndCss = Get-NdExtendedCss -Style $style
         $muted = $style.colours.muted
         $headCol = if ($style.colours.heading) { $style.colours.heading } else { $accentRgb }
+        $h3Col = if ($style.colours.h3) { $style.colours.h3 } else { $accentSoft }
+        $codeCol = $style.colours.code
+        $codeBg = $style.colours.codeBg
+        $codeBlockBg = $style.colours.codeBlockBg
+        $h1Rule = if ($style.layout.headingRules) { "border-bottom: 2.25pt solid $rule; padding-bottom: 5pt;" } else { '' }
+        $h2Rule = if ($style.layout.headingRules) { "border-bottom: 0.75pt solid $border; padding-bottom: 3pt;" } else { '' }
+        # A section heading opens its page, so it has no gap to leave above itself.
+        $h2Margin = if ($pageSections) { '0 0 12pt 0' } else { '20pt 0 8pt 0' }
 
         # Table header row. 'filled' is the original accent bar; 'rule' is a lighter,
         # report-style header: small uppercase grey labels over a single rule, rows
@@ -1985,10 +2434,10 @@ body { font-family: '$fontBody', Calibri, sans-serif; font-size: ${sizeBody}pt; 
 p { margin: 0 0 8pt 0; }
 
 h1 { font-family: '$fontHead', '$fontBody', sans-serif; font-size: 21pt; color: $headCol;
-     border-bottom: 2.25pt solid $rule; padding-bottom: 5pt; margin: 0 0 14pt 0; page-break-after: avoid; }
-h2 { font-family: '$fontHead', '$fontBody', sans-serif; font-size: 14pt; color: $headCol;
-     border-bottom: 0.75pt solid $border; padding-bottom: 3pt; margin: 20pt 0 8pt 0; page-break-after: avoid; }
-h3 { font-family: '$fontHead', '$fontBody', sans-serif; font-size: 11.5pt; color: $accentSoft;
+     $h1Rule margin: 0 0 14pt 0; page-break-after: avoid; }
+h2 { font-family: '$fontHead', '$fontBody', sans-serif; font-size: $($style.layout.h2SizePt)pt; color: $headCol;
+     $h2Rule margin: $h2Margin; page-break-after: avoid; }
+h3 { font-family: '$fontHead', '$fontBody', sans-serif; font-size: $($style.layout.h3SizePt)pt; color: $h3Col;
      margin: 14pt 0 5pt 0; page-break-after: avoid; }
 h4 { font-size: ${sizeBody}pt; color: #333333; margin: 12pt 0 4pt 0; page-break-after: avoid; }
 
@@ -1996,6 +2445,7 @@ hr { border: none; border-top: 0.75pt solid $border; margin: 14pt 0; }
 
 ul, ol { margin: 0 0 8pt 0; padding-left: 20pt; }
 li { margin: 0 0 3pt 0; }
+p.task-item { margin: 0 0 4pt 6pt; }
 ul.contains-task-list { list-style: none; padding-left: 6pt; }
 span.cb { font-family: 'Segoe UI Symbol'; font-size: 12pt; }
 
@@ -2008,12 +2458,12 @@ table.meta td { border: none; padding: 1pt 14pt 1pt 0; }
 table.meta td.k { color: #595959; font-weight: 600; white-space: nowrap; }
 table.meta td.v { color: #1F1F1F; }
 
-code { font-family: $fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; color: #A31515;
-       background: #F4F4F4; padding: 0 2pt; }
-pre { font-family: $fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; background: #F7F7F9;
+code { font-family: $fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; color: $codeCol;
+       background: $codeBg; padding: 0 2pt; }
+pre { font-family: $fontMono, 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace; font-size: 9pt; color: $textCol;
+      line-height: 1.15; background: $codeBlockBg;
       border: 0.5pt solid #DDDDDD; border-left: 3pt solid $accentSoft; padding: 6pt 8pt;
       margin: 6pt 8pt 12pt 8pt; page-break-inside: avoid; }
-pre code { background: none; color: $textCol; padding: 0; }
 
 blockquote { border-left: 3pt solid $border; margin: 6pt 0 12pt 10pt; padding: 2pt 0 2pt 10pt; color: #444444; }
 
@@ -2132,6 +2582,8 @@ $body
                     $rng.Text = ''                   # AddPicture inserts at the range,
                     $shape = $doc.InlineShapes.AddPicture($d.Path, $false, $true, $rng)   # it does not replace it
                     $shape.LockAspectRatio = -1      # msoTrue
+                    # A double-resolution picture would otherwise land at double the size.
+                    if ($d.WidthPx -gt 0) { $shape.Width = [Math]::Min($d.WidthPx * 0.75, $maxW) }
                     if ($shape.Width -gt $maxW) { $shape.Width = $maxW }
                     if ($shape.Height -gt $maxH) { $shape.Height = $maxH }
                 }
@@ -2199,35 +2651,122 @@ $body
                 $section.Footers.Item(1).LinkToPrevious = $false
             }
 
-            # Header: document title, right aligned, hairline rule underneath.
-            $hdr = $section.Headers.Item(1).Range
-            $hdr.Text = $title
-            $hdr.ParagraphFormat.Alignment = 2
-            $hdr.Font.Name = $fontBody
-            $hdr.Font.Size = 8
-            $hdr.Font.Color = 8421504
-            $hdr.Borders.Item(-3).LineStyle = 1
-            $hdr.Borders.Item(-3).LineWidth = 4
+            # Header and footer: a left and a right part, from the style's templates.
+            # Each part is written in pieces, because {page} and {pages} have to become
+            # fields, and each piece is coloured as it lands: a field's result is not
+            # plain text, so colouring by searching for the text afterwards would miss it.
+            $grey = 8421504
+            $writeRunning = {
+                param($story, [string]$Left, [string]$Right, $LeftColour, $RightColour)
+                $story.Range.Text = ''
+                $base = $story.Range
+                $base.Font.Name = $fontBody
+                $base.Font.Size = 8
+                $base.Font.Color = $grey
+                $base.ParagraphFormat.Alignment = 0
 
-            # Footer: "<date>            Page X of Y"
-            $ftr = $section.Footers.Item(1).Range
-            $ftr.Text = ''
-            $ftr.Font.Name = $fontBody
-            $ftr.Font.Size = 8
-            $ftr.Font.Color = 8421504
-            $ftr.ParagraphFormat.Alignment = 0
-            $ftr.InsertAfter((Get-Date -Format 'yyyy-MM-dd') + "`t")
-            $end = $section.Footers.Item(1).Range; $end.Collapse(0)
-            $end.InsertAfter('Page ')
-            $end = $section.Footers.Item(1).Range; $end.Collapse(0)
-            $doc.Fields.Add($end, -1, 'PAGE', $false) | Out-Null
-            $end = $section.Footers.Item(1).Range; $end.Collapse(0)
-            $end.InsertAfter(' of ')
-            $end = $section.Footers.Item(1).Range; $end.Collapse(0)
-            $doc.Fields.Add($end, -1, 'NUMPAGES', $false) | Out-Null
-            $section.Footers.Item(1).Range.ParagraphFormat.TabStops.ClearAll()
-            $section.Footers.Item(1).Range.ParagraphFormat.TabStops.Add(
-                ($ps.PageWidth - $ps.LeftMargin - $ps.RightMargin), 2) | Out-Null
+                $put = {
+                    param([string]$Text, $Colour)
+                    foreach ($piece in [regex]::Split($Text, '(\{pages?\})')) {
+                        if (-not $piece) { continue }
+                        $from = $story.Range.End - 1
+                        $end = $story.Range; $end.Collapse(0)
+                        switch ($piece) {
+                            '{page}' { $doc.Fields.Add($end, -1, 'PAGE', $false) | Out-Null }
+                            '{pages}' { $doc.Fields.Add($end, -1, 'NUMPAGES', $false) | Out-Null }
+                            default { $end.InsertAfter($piece) }
+                        }
+                        $to = $story.Range.End - 1
+                        if ($to -gt $from) {
+                            $span = $story.Range
+                            $span.SetRange($from, $to)
+                            $span.Font.Color = $(if ($null -ne $Colour) { $Colour } else { $grey })
+                        }
+                    }
+                }
+
+                & $put $Left $LeftColour
+                if ($Right) {
+                    $end = $story.Range; $end.Collapse(0)
+                    $end.InsertAfter("`t")
+                    & $put $Right $RightColour
+                }
+                $story.Range.ParagraphFormat.TabStops.ClearAll()
+                $story.Range.ParagraphFormat.TabStops.Add(($ps.PageWidth - $ps.LeftMargin - $ps.RightMargin), 2) | Out-Null
+            }
+
+            $hdrStory = $section.Headers.Item(1)
+            & $writeRunning $hdrStory (Expand-RunningText $style.header.left $runningValues) `
+            (Expand-RunningText $style.header.right $runningValues) `
+            (ConvertTo-WordColour ([string]$style.header.leftColour)) (ConvertTo-WordColour ([string]$style.header.rightColour))
+            # Hairline under the header.
+            $hdrStory.Range.Borders.Item(-3).LineStyle = 1
+            $hdrStory.Range.Borders.Item(-3).LineWidth = 4
+            $hdrRule = ConvertTo-WordColour ([string]$style.header.ruleColour)
+            if ($null -ne $hdrRule) { $hdrStory.Range.Borders.Item(-3).Color = $hdrRule }
+
+            $ftrColour = ConvertTo-WordColour ([string]$style.footer.colour)
+            & $writeRunning $section.Footers.Item(1) (Expand-RunningText $style.footer.left $runningValues) `
+            (Expand-RunningText $style.footer.right $runningValues) $ftrColour $ftrColour
+
+            # Colours Word keeps in styles and list definitions, out of reach of the
+            # stylesheet. wdStyleHyperlink is -86; wdListNumberStyleBullet is 23.
+            $linkColour = ConvertTo-WordColour ([string]$style.colours.link)
+            if ($null -ne $linkColour) {
+                try { $doc.Styles.Item(-86).Font.Color = $linkColour } catch { }
+            }
+            $bulletColour = ConvertTo-WordColour ([string]$style.colours.bullet)
+            if ($null -ne $bulletColour) {
+                foreach ($template in $doc.ListTemplates) {
+                    for ($lvl = 1; $lvl -le 9; $lvl++) {
+                        try {
+                            $level = $template.ListLevels.Item($lvl)
+                            if ($level.NumberStyle -eq 23) { $level.Font.Color = $bulletColour }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            # A code block is one paragraph per line, and each line was getting the
+            # block's own margins, which pulled ASCII diagrams apart. Keep the margins
+            # for the block's edges only, and keep its lines on one page where they fit.
+            try {
+                $pre = $doc.Styles.Item('HTML Preformatted')
+                $pre.NoSpaceBetweenParagraphsOfSameStyle = $true
+                $pre.ParagraphFormat.KeepWithNext = -1
+            }
+            catch { }     # No code blocks: Word has not made the style.
+
+            # Contents page numbers. A bookmark on each section heading, and a PAGEREF
+            # to it, so the numbers stay right if someone edits the document afterwards.
+            if ($wantCards) {
+                foreach ($s in $sectionList) {
+                    $name = "mdsection$($s.Number)"
+                    $rng = $doc.Content
+                    $find = $rng.Find
+                    $find.ClearFormatting()
+                    $find.Text = $s.Token
+                    $find.Forward = $true
+                    $find.Wrap = 0
+                    $find.MatchCase = $true
+                    if (-not $find.Execute()) { Write-Warning "Section $($s.Number): heading not found for the contents page."; continue }
+                    $rng.Text = ''
+                    $doc.Bookmarks.Add($name, $rng.Paragraphs.Item(1).Range) | Out-Null
+
+                    $rng = $doc.Content
+                    $find = $rng.Find
+                    $find.ClearFormatting()
+                    $find.Text = $s.Page
+                    $find.Forward = $true
+                    $find.Wrap = 0
+                    $find.MatchCase = $true
+                    if ($find.Execute()) {
+                        $rng.Text = ''
+                        $doc.Fields.Add($rng, -1, "PAGEREF $name \h", $false) | Out-Null
+                    }
+                }
+            }
 
             if ($coverSplit) {
                 $cover = $doc.Sections.Item(1)
@@ -2283,6 +2822,22 @@ $body
             # description; that is read here and then cleared, so the marker never
             # reaches a reader as table alt text.
             foreach ($tbl in $doc.Tables) {
+                # Word drops a table's bottom margin on import, so whatever follows sat
+                # hard against the last row. The gap goes on the next paragraph instead,
+                # unless that opens a page, where it would just push the page down.
+                try {
+                    if ($tbl.Descr -ne 'cover') {
+                        $after = $tbl.Range.Next(4, 1)       # wdParagraph
+                        if ($after) {
+                            $para = $after.Paragraphs.Item(1)
+                            if ($para.SpaceBefore -lt 10 -and -not $para.PageBreakBefore -and -not $after.Information(12)) {
+                                $para.SpaceBefore = 10
+                            }
+                        }
+                    }
+                }
+                catch { }
+
                 try {
                     $tbl.Rows.AllowBreakAcrossPages = $false
                     # The title page is layout, sized above; nothing here applies.
@@ -2314,7 +2869,17 @@ $body
 
             try { $doc.Content.ParagraphFormat.WidowControl = $true } catch { }
 
-            if ($TableOfContents) {
+            # The same for a list: its bottom margin is dropped too, and "li" spacing is
+            # all that is left under the last item.
+            foreach ($list in $doc.Lists) {
+                try {
+                    $lastItem = $list.Range.Paragraphs.Last
+                    if ($lastItem.SpaceAfter -lt 8) { $lastItem.SpaceAfter = 8 }
+                }
+                catch { }
+            }
+
+            if ($wantWordToc) {
                 # The TOC 1-3 styles are Word's own, not ours: the field is built from
                 # built-in styles that follow the document theme, so a TOC dropped into
                 # a document whose body font came from our stylesheet arrives in
@@ -2379,6 +2944,12 @@ $body
                 $doc.TablesOfContents.Add($tocRange, $true, 1, 3) | Out-Null
                 $doc.TablesOfContents.Item(1).Update()
                 & $tocStyles $doc
+            }
+
+            # Last before saving, once the layout has settled: the contents page numbers
+            # are worth nothing until every picture and table is in place.
+            if ($wantCards) {
+                try { $doc.Repaginate(); $doc.Fields.Update() | Out-Null } catch { }
             }
 
             try {
@@ -2580,6 +3151,10 @@ function Update-ConvertMarkdown {
         if (-not $PSCmdlet.ShouldProcess($moduleDir, "Update $installed -> $available")) { return }
 
         Copy-Item -Path (Join-Path $src.FullName 'ConvertMarkdown.ps*1') -Destination $moduleDir -Force
+        $sampleThemes = Join-Path $src.FullName 'themes'
+        if (Test-Path -LiteralPath $sampleThemes) {
+            Copy-Item -LiteralPath $sampleThemes -Destination $moduleDir -Recurse -Force
+        }
 
         Write-Host "ConvertMarkdown updated: $installed -> $available" -ForegroundColor Green
         Write-Host 'Open a new session, or run: Import-Module ConvertMarkdown -Force' -ForegroundColor Yellow

@@ -4,6 +4,43 @@ Versioned `yyyy.MM.dd`.
 
 ---
 
+## 2026.11.06
+
+### Added
+
+- **Report layout, set from a style or theme.** `layout` starts each h2 on its own
+  page, removes the heading rules, sizes h2 and h3, and adds a numbered two-column
+  contents page with live page numbers (`layout.contents: "cards"`). `header` and
+  `footer` take left and right templates with placeholders such as `{title}`,
+  `{status}` and `{page}`, each with its own colour. All of it is off by default.
+- **Theme keys for what used to be fixed:** `colours.h3`, `link`, `bullet`, `code`,
+  `codeBg` and `codeBlockBg`; `tables.banded` and `tables.firstColumnBold`;
+  `cover.panelFields`; `layout.callouts: "brand"` for an accent-bar callout.
+- **Page elements in Markdown:** `:kicker[]`, `:::lead`, `:::stats`, `:::strip` and
+  `:::columns`. A callout can now be named, as in `> [!NOTE] Why in-house`.
+- **Sample theme.** `themes/umbrella-corporation` is a complete report theme for a
+  fictional company, with `examples/umbrella-report.md` to show it off. Sample themes
+  ship with the module; private ones stay in the gitignored `theming/` folder.
+
+### Changed
+
+- **Sharper diagrams.** Diagrams from `mermaid.ink` are requested at double
+  resolution and shown at their usual size. If that request fails, the standard image
+  is used.
+- Task lists print as a checkbox and text, not a bullet and then a checkbox.
+
+### Fixed
+
+- **Double-spaced code blocks.** Each line of a code block was getting the block's
+  margins, which pulled ASCII diagrams apart. Code blocks now stay on one page where
+  they fit, instead of running into the footer.
+- **Grey bands in code blocks.** Word applied the inline-code colour and fill to each
+  line of a block, because it ignores the `pre code` rule.
+- **No gap after tables and lists.** Word drops their bottom margin on import, so the
+  next paragraph sat hard against them. Adjacent tables now get a gap too.
+
+---
+
 ## 2026.10.29
 
 ### Added

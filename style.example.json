@@ -24,11 +24,44 @@
     "rule": "#C8102E",
     "border": "#B4C6E7",
     "band": "#F2F5FA",
-    "text": "#1F1F1F"
+    "text": "#1F1F1F",
+    "h3": "",
+    "link": "",
+    "bullet": "",
+    "code": "#A31515",
+    "codeBg": "#F4F4F4",
+    "codeBlockBg": "#F7F7F9"
   },
 
   "tables": {
-    "headerStyle": "filled"
+    "headerStyle": "filled",
+    "banded": true,
+    "firstColumnBold": false
+  },
+
+  "layout": {
+    "sectionBreak": "none",
+    "headingRules": true,
+    "h2SizePt": 14,
+    "h3SizePt": 11.5,
+    "contents": "none",
+    "contentsKicker": "Contents",
+    "contentsTitle": "What this document covers",
+    "callouts": "github"
+  },
+
+  "header": {
+    "left": "",
+    "right": "{title}",
+    "leftColour": "",
+    "rightColour": "",
+    "ruleColour": ""
+  },
+
+  "footer": {
+    "left": "{today}",
+    "right": "Page {page} of {pages}",
+    "colour": ""
   },
 
   "cover": {
@@ -37,7 +70,8 @@
     "logoWidthMm": 55,
     "kicker": "",
     "band": "",
-    "fields": []
+    "fields": [],
+    "panelFields": []
   },
 
   "diagrams": {

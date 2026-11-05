@@ -28,6 +28,16 @@ BeforeAll {
     $script:OutDir = Join-Path ([IO.Path]::GetTempPath()) ('cm-tests-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $script:OutDir | Out-Null
 
+    # Whoever runs the suite may have a default theme of their own, and a landscape
+    # report theme changes every page count and orientation asserted below. An empty
+    # style file sits ahead of ~/.convertmarkdown/style.json, so each test sees the
+    # built-in defaults unless it asks for something else.
+    $script:SavedStyleEnv = $env:CONVERTMARKDOWN_STYLE
+    $script:SavedThemeEnv = $env:CONVERTMARKDOWN_THEME
+    $env:CONVERTMARKDOWN_STYLE = Join-Path $script:OutDir 'no-style.json'
+    Set-Content -LiteralPath $env:CONVERTMARKDOWN_STYLE -Value '{}'
+    $env:CONVERTMARKDOWN_THEME = $null
+
     Import-Module (Join-Path $Root 'ConvertMarkdown.psd1') -Force
 
     # Source text, normalised the way Convert-Markdown normalises it. Several
@@ -69,6 +79,8 @@ BeforeAll {
 }
 
 AfterAll {
+    $env:CONVERTMARKDOWN_STYLE = $script:SavedStyleEnv
+    $env:CONVERTMARKDOWN_THEME = $script:SavedThemeEnv
     Remove-Item $script:OutDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -470,6 +482,183 @@ Describe 'Themes and title page' {
         $h | Should -Match '@@MDCOVERBREAK@@'
         $h | Should -Match 'class="cover-bar"'                # no logo: the accent bar
     }
+
+    It 'prints panel fields on the panel and leaves them off the bottom' {
+        $r = InModuleScope ConvertMarkdown {
+            $style = Get-DefaultStyle
+            $style.cover.panelFields = @('classification')
+            $bottom = Get-CoverField -Fields ([ordered]@{ classification = 'Internal'; author = 'A' }) -Style $style
+            $html = New-CoverHtml -Title 'T' -Subtitle '' -Kicker '' -Fields $bottom -LogoToken '' `
+                -PanelFields ([ordered]@{ Classification = 'Internal' })
+            [pscustomobject]@{ Keys = @($bottom.Keys); Html = $html }
+        }
+        $r.Keys | Should -Not -Contain 'Classification'
+        $r.Html | Should -Match 'class="cover-panel-label">CLASSIFICATION'
+    }
+}
+
+Describe 'Report layout' {
+    It 'changes nothing about a document unless a theme asks' {
+        $s = InModuleScope ConvertMarkdown { Get-DefaultStyle }
+        $s.layout.sectionBreak | Should -Be 'none'
+        $s.layout.headingRules | Should -BeTrue
+        $s.layout.contents | Should -Be 'none'
+        $s.layout.callouts | Should -Be 'github'
+        $s.header.right | Should -Be '{title}'
+        $s.footer.right | Should -Be 'Page {page} of {pages}'
+        $s.tables.banded | Should -BeTrue
+    }
+
+    It 'documents every default key in the schema' {
+        $schema = Get-Content (Join-Path $script:Root 'style.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $defaults = InModuleScope ConvertMarkdown { Get-DefaultStyle }
+        foreach ($section in @($defaults.Keys | Where-Object { $defaults[$_] -is [System.Collections.IDictionary] })) {
+            $schema.properties.Contains($section) | Should -BeTrue -Because "'$section' is a style section"
+            foreach ($key in $defaults[$section].Keys) {
+                $schema.properties[$section].properties.Contains($key) | Should -BeTrue -Because "$section.$key is a default"
+            }
+        }
+    }
+
+    It 'fills in a running header and tidies an empty placeholder' -ForEach @(
+        @{ T = '{status} · {date}'; V = @{ date = 'May' }; E = 'May' }
+        @{ T = '{status} · {date}'; V = @{ status = 'Draft' }; E = 'Draft' }
+        @{ T = '{status} · {date}'; V = @{ status = 'Draft'; date = 'May' }; E = 'Draft · May' }
+        @{ T = '{a} · {b} · {c}'; V = @{ a = '1'; c = '3' }; E = '1 · 3' }
+        @{ T = '{nothing}'; V = @{ a = '1' }; E = '' }
+        @{ T = 'Page {page}/{pages}'; V = @{ a = '1' }; E = 'Page {page}/{pages}' }
+        @{ T = '{TITLE}'; V = @{ title = 'Mixed case' }; E = 'Mixed case' }
+    ) {
+        $r = InModuleScope ConvertMarkdown -Parameters @{ t = $T; v = $V } { Expand-RunningText -Template $t -Values $v }
+        $r | Should -Be $E
+    }
+
+    It 'turns a hex colour into the BGR integer Word wants' {
+        InModuleScope ConvertMarkdown {
+            ConvertTo-WordColour '#123456' | Should -Be (0x12 + (0x34 * 256) + (0x56 * 65536))
+            ConvertTo-WordColour '' | Should -BeNullOrEmpty
+            ConvertTo-WordColour 'blue' | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'turns a kicker line into a label the heading can follow' {
+        $r = InModuleScope ConvertMarkdown { Convert-NdInline -Markdown ":kicker[Risk & cost]`n## Heading" }
+        $r | Should -Match '<p class="kicker">RISK &amp; COST</p>\n\n## Heading'
+    }
+
+    It 'leaves a kicker in a fence alone' {
+        $r = InModuleScope ConvertMarkdown { Convert-NdInline -Markdown "``````text`n:kicker[Risk]`n``````" }
+        $r | Should -Match ':kicker\[Risk\]'
+    }
+
+    It 'builds a tile for every line of a stats block' {
+        $h = InModuleScope ConvertMarkdown { New-NdStats -Body "Coverage | 20+ | sites`nVolume | ~500k" }
+        ([regex]::Matches($h, 'class="stat"')).Count | Should -Be 2
+        $h | Should -Match 'COVERAGE'
+        $h | Should -Match 'class="stat-value">20\+'
+        $h | Should -Match 'summary="nd"'
+    }
+
+    It 'keeps an escaped pipe as text' {
+        $h = InModuleScope ConvertMarkdown { New-NdStats -Body 'Ratio | 1\|2 | note' }
+        $h | Should -Match 'class="stat-value">1\|2'
+    }
+
+    It 'marks a strip step with the rule colour, and wraps on the row count' {
+        $h = InModuleScope ConvertMarkdown {
+            New-NdStrip -Header ' 2' -Body "One | First`n! Gate | Second`nThree | Third" -RuleColour '#ABCDEF'
+        }
+        ([regex]::Matches($h, '<table ')).Count | Should -Be 2
+        ([regex]::Matches($h, 'class="strip"')).Count | Should -Be 3
+        ([regex]::Matches($h, '#ABCDEF')).Count | Should -Be 2       # the bar and the label
+        $h | Should -Match 'GATE'
+        $h | Should -Not -Match '!'
+    }
+
+    It 'splits columns on a rule, and keeps one column as plain content' {
+        InModuleScope ConvertMarkdown {
+            $two = New-NdColumns -Body "- a`n`n---`n`n- b"
+            ([regex]::Matches($two, 'class="col"')).Count | Should -Be 2
+            New-NdColumns -Body '- only one' | Should -Not -Match 'class="col"'
+        }
+    }
+
+    It 'names a callout, and uses the brand form only when told to' {
+        InModuleScope ConvertMarkdown {
+            $script:NdBrandCallout = $null
+            $plain = New-NdCallout -Type note -Body 'x' -Label 'Why in-house'
+            $plain | Should -Match 'Why in-house'
+            $plain | Should -Match '#DDF4FF'
+
+            $script:NdBrandCallout = @{ Colour = '#111111'; Tint = '#222222' }
+            try {
+                $brand = New-NdCallout -Type note -Body 'x' -Label 'Why in-house'
+                $brand | Should -Match 'WHY IN-HOUSE'
+                $brand | Should -Match '#222222'
+                $brand | Should -Not -Match 'class="sym"'
+            }
+            finally { $script:NdBrandCallout = $null }
+        }
+    }
+
+    It 'reads a callout name from the marker line' {
+        $r = InModuleScope ConvertMarkdown { Expand-NdBlock -Markdown "> [!NOTE] Why in-house`n> Body" -ImageAlt @{} }
+        $r.Callouts | Should -Be 1
+        ($r.Blocks.Values -join '') | Should -Match 'Why in-house'
+    }
+
+    It 'breaks the page on the kicker, not between it and its heading' {
+        $html = '<p>Intro</p><h2>One</h2><p class="kicker">B</p><h2>Two</h2>'
+        $r = InModuleScope ConvertMarkdown -Parameters @{ h = $html } {
+            Add-SectionMarker -Html $h -PageBreak $true -Contents $false
+        }
+        $r.Sections.Count | Should -Be 2
+        $r.Html | Should -Match '<h2>One</h2>'                       # the first stays put
+        $r.Html | Should -Match '<p class="kicker" style="page-break-before:always">B</p>\s*<h2>Two'
+    }
+
+    It 'starts the first section on a new page after a contents page, and marks each one' {
+        $r = InModuleScope ConvertMarkdown {
+            Add-SectionMarker -Html '<h2>One</h2><h2>Two</h2>' -PageBreak $false -Contents $true
+        }
+        $r.Html | Should -Match '<h2 style="page-break-before:always">@@MDSECTION1@@One</h2>'
+        $r.Html | Should -Match '<h2>@@MDSECTION2@@Two</h2>'
+        $r.FirstIndex | Should -Be 0
+    }
+
+    It 'lays the contents out down the left column first' {
+        $h = InModuleScope ConvertMarkdown {
+            $s = 1..3 | ForEach-Object { [pscustomobject]@{ Number = $_; Kicker = "K$_"; Title = "T$_"; Page = "P$_" } }
+            New-ContentsHtml -Sections $s -Kicker 'Contents' -Title 'What this covers'
+        }
+        ([regex]::Matches($h, '<tr>')).Count | Should -Be 2
+        $h | Should -Match 'CONTENTS'
+        $h | Should -Match '>01<'
+        # T1 and T3 share the first row, because T2 is under T1.
+        $h | Should -Match '(?s)<tr>(?:(?!</tr>).)*T1(?:(?!</tr>).)*T3'
+    }
+
+    It 'finds the sample theme by name, with its logo' {
+        $s = InModuleScope ConvertMarkdown {
+            $f = Resolve-ThemeFile -Theme 'umbrella-corporation'
+            $style = Get-DefaultStyle
+            Merge-StyleLayer -Style $style -Layer (Import-StyleFile -LiteralPath $f) -BaseDir (Split-Path -Parent $f)
+            $style
+        }
+        $s.name | Should -Be 'Umbrella Corporation'
+        $s.layout.contents | Should -Be 'cards'
+        Test-Path -LiteralPath $s.cover.logo | Should -BeTrue
+    }
+
+    It 'never tracks a private theme' {
+        $git = Get-Command git -ErrorAction SilentlyContinue
+        if (-not $git -or -not (Test-Path (Join-Path $script:Root '.git'))) {
+            Set-ItResult -Skipped -Because 'this is not a git checkout'
+            return
+        }
+        @(git -C $script:Root ls-files -- 'theming/*') | Should -BeNullOrEmpty
+        @(git -C $script:Root check-ignore 'theming/any/theme.json') | Should -Not -BeNullOrEmpty
+    }
 }
 
 Describe 'End-to-end conversion' -Tag Word {
@@ -585,6 +774,54 @@ Describe 'End-to-end conversion' -Tag Word {
             -NoTitlePage -WarningAction SilentlyContinue
         $r.Orientation | Should -Be 'Portrait'
         $r.TitlePage | Should -BeFalse
+    }
+
+    It 'builds a report from the sample theme, with every placeholder resolved' {
+        $out = Join-Path $script:OutDir 'umbrella.docx'
+        $r = Convert-Markdown (Join-Path $script:ExampleDir 'umbrella-report.md') -Theme 'umbrella-corporation' `
+            -OutputPath $out -Format Docx -Force -DiagramService none -WarningAction SilentlyContinue
+        $r.Orientation | Should -Be 'Landscape'
+        $r.TitlePage | Should -BeTrue
+        $r.Theme | Should -Be 'umbrella-corporation'
+
+        $w = New-Object -ComObject Word.Application
+        try {
+            $w.Visible = $false; $w.DisplayAlerts = 0
+            $d = $w.Documents.Open($out, $false, $true)
+            $d.Content.Text | Should -Not -Match '@@'
+
+            $section = $d.Sections.Item($d.Sections.Count)
+            $section.Headers.Item(1).Range.Text | Should -Match 'Rainwear distribution review\tConcept proposal . Sample only'
+            $section.Footers.Item(1).Range.Text | Should -Match 'Fictional example . November 2026\tPage \d+/\d+'
+
+            # A contents page number for each of the three sections, resolved to a real page.
+            $refs = @($d.Fields | Where-Object { $_.Code.Text -match 'PAGEREF' })
+            $refs.Count | Should -Be 3
+            foreach ($f in $refs) { $f.Result.Text | Should -Match '^\d+$' }
+
+            # One gap for a code block as a whole, not one per line.
+            $d.Styles.Item('HTML Preformatted').NoSpaceBetweenParagraphsOfSameStyle | Should -BeTrue
+            $d.Close(0)
+        }
+        finally { $w.Quit() }
+    }
+
+    It 'gives a plain document the running header and footer it always had' {
+        $out = Join-Path $script:OutDir 'plain-chrome.docx'
+        # An explicit empty style, so the machine's own default theme cannot apply.
+        $empty = Join-Path $script:OutDir 'empty-style-chrome.json'
+        Set-Content -LiteralPath $empty -Value '{}'
+        $null = Convert-Markdown (Join-Path $script:ExampleDir 'core-features.md') -StyleSheet $empty `
+            -OutputPath $out -Format Docx -Force -DiagramService none -WarningAction SilentlyContinue
+        $w = New-Object -ComObject Word.Application
+        try {
+            $w.Visible = $false; $w.DisplayAlerts = 0
+            $d = $w.Documents.Open($out, $false, $true)
+            $section = $d.Sections.Item(1)
+            $section.Footers.Item(1).Range.Text | Should -Match '^\d{4}-\d{2}-\d{2}\tPage \d+ of \d+'
+            $d.Close(0)
+        }
+        finally { $w.Quit() }
     }
 
     It 'writes nothing under -WhatIf' {

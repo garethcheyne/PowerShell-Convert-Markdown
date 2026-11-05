@@ -115,13 +115,34 @@ automatically.
 | `colours.border` | `#B4C6E7` | Table borders, horizontal rules, blockquote bar, h2 underline. |
 | `colours.band` | `#F2F5FA` | Alternating table row background. |
 | `colours.text` | `#1F1F1F` | Body text. Near-black prints better than pure black. |
+| `colours.h3` | `""` | h3 text. Empty means `accentSoft`. |
+| `colours.link` | `""` | Hyperlinks. Empty leaves Word's blue. |
+| `colours.bullet` | `""` | List bullets. Empty leaves them in the text colour. |
+| `colours.code` | `#A31515` | Inline code text. |
+| `colours.codeBg` | `#F4F4F4` | Fill behind inline code. |
+| `colours.codeBlockBg` | `#F7F7F9` | Fill behind code blocks. |
 | `tables.headerStyle` | `filled` | `filled`: accent header row, boxed cells. `rule`: small uppercase labels over a rule, hairline rows. |
+| `tables.banded` | `true` | Tint alternate rows with `colours.band`. |
+| `tables.firstColumnBold` | `false` | Set the first column of every data table in bold. |
+| `layout.sectionBreak` | `none` | `page` starts every h2 on a new page. |
+| `layout.headingRules` | `true` | Draw the rules under h1 and h2. |
+| `layout.h2SizePt` | `14` | h2 size. Raise it when h2 is a page title. |
+| `layout.h3SizePt` | `11.5` | h3 size. |
+| `layout.contents` | `none` | `word` always adds Word's contents. `cards` builds a numbered two-column contents page. |
+| `layout.contentsKicker` | `Contents` | Label above the title of a `cards` contents page. |
+| `layout.contentsTitle` | `What this document covers` | Title of a `cards` contents page. |
+| `layout.callouts` | `github` | `github`: alert colours and icons. `brand`: accent bar on `colours.band`. |
+| `header.left`, `header.right` | `""`, `{title}` | Running header text — see [Report layout](#report-layout). |
+| `header.leftColour`, `header.rightColour`, `header.ruleColour` | `""` | Header colours. Empty means grey text and a black rule. |
+| `footer.left`, `footer.right` | `{today}`, `Page {page} of {pages}` | Running footer text. |
+| `footer.colour` | `""` | Footer text colour. Empty means grey. |
 | `cover.enabled` | `false` | Add a title page without `-TitlePage`. |
 | `cover.logo` | `""` | PNG/JPG for the title page, relative to the file naming it. Empty draws an accent bar. |
 | `cover.logoWidthMm` | `55` | Logo width; height follows its proportions. |
 | `cover.kicker` | `""` | Label above the title when the frontmatter has no `kicker`. |
 | `cover.band` | `""` | Title page panel colour. Empty means `colours.band`. |
 | `cover.fields` | `[]` | Frontmatter keys along the bottom of the title page, in order. Empty shows them all. |
+| `cover.panelFields` | `[]` | Frontmatter keys on the panel under the standfirst, such as a classification. |
 | `diagrams.service` | `mermaid.ink` | `mermaid.ink`, `kroki`, or `none`. |
 | `diagrams.serviceUrl` | `""` | Base URL of a self-hosted renderer. Empty means the public endpoint. |
 | `diagrams.maxWidthPx` | `640` | Max diagram width. 640 is the A4 text width at 96dpi. Also capped to page height. |
@@ -233,8 +254,80 @@ lists every default (as `New-ConvertMarkdownStyle` without `-Theme` writes) hide
 the whole theme — keep a theme-based style file to the keys that differ.
 
 A theme is found by name in `$env:CONVERTMARKDOWN_THEMES` (a path list),
-`~/.convertmarkdown/themes`, then the module's own `theming/` folder (useful with
-`Install.ps1 -Link`). `-Theme` also takes a path to a theme folder or `theme.json`.
+`~/.convertmarkdown/themes`, the module's own `theming/` folder (useful with
+`Install.ps1 -Link`), then the sample themes that ship with the module. `-Theme` also
+takes a path to a theme folder or `theme.json`.
+
+**A sample to start from.** [themes/umbrella-corporation](themes/umbrella-corporation)
+is a complete report theme for a fictional company. Copy the folder into `theming/`,
+rename it, and change the colours and logo to make your own:
+
+```powershell
+Convert-Markdown .\examples\umbrella-report.md -Theme umbrella-corporation -Format Both -Force
+```
+
+---
+
+## Report layout
+
+Set in a style or theme, so one document can be a plain page on one machine and a
+branded report on another. Everything here is off by default.
+
+```json
+{
+  "page":   { "orientation": "Landscape", "marginMm": 18 },
+  "layout": { "sectionBreak": "page", "headingRules": false, "h2SizePt": 21, "contents": "cards", "callouts": "brand" },
+  "header": { "left": "{title}", "right": "{kicker} · {classification}" },
+  "footer": { "left": "{status} · {date}", "right": "Page {page}/{pages}" }
+}
+```
+
+Header and footer templates can use `{title}`, `{kicker}`, `{date}`, `{today}`,
+`{page}`, `{pages}` and any frontmatter key. A placeholder with no value disappears,
+along with the separator beside it, so `{status} · {date}` on a document with no
+status is just the date.
+
+These work in the Markdown itself, under any theme:
+
+````markdown
+:kicker[Technology]
+
+## How it works
+
+:::lead
+An opening paragraph, set larger than the body.
+:::
+
+:::stats
+Coverage | 20+ | sites researched
+Volume | ~500k | listings per cycle
+:::
+
+:::strip 5
+Phase 1 | Plan | Confirm the scope
+! Gate 1 | Decide | A leading ! marks the one that matters
+Phase 2 | Build | Label, title and text, split by pipes
+:::
+
+:::columns
+### What we found
+
+- Markdown works as normal in here.
+
+---
+
+### What we recommend
+
+- A `---` line starts the next column.
+:::
+
+> [!NOTE] Why in-house
+> Text after the marker names the callout.
+````
+
+`:kicker[]` is the small label above a heading. It goes on its own line, directly
+above the heading, and a `cards` contents page lists it beside the section title.
+`strip 5` wraps the steps every five; without a number they share one row, up to six.
 
 ---
 
@@ -295,7 +388,7 @@ title page on.
 | `-ImageMaxWidth` | `640` | Max embedded image width in pixels. |
 | `-NoRemoteImages` | off | Skip images referenced by `http(s)` URL. |
 | `-ExcludeRestricted` | off | Drop NextDocs `!variant!` role-gated sections. |
-| `-TableOfContents` | off | Insert a TOC after the title. |
+| `-TableOfContents` | off | Insert a TOC after the title, or a contents page when `layout.contents` is `cards`. |
 | `-Open` | off | Leave open in Word instead of closing. |
 | `-Force` | off | Overwrite existing output. |
 
