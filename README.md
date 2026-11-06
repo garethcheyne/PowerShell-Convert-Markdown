@@ -253,6 +253,13 @@ The theme comes from `-Theme`, else the style file's `"theme"` key, else
 lists every default (as `New-ConvertMarkdownStyle` without `-Theme` writes) hides
 the whole theme — keep a theme-based style file to the keys that differ.
 
+To skip a default theme for one document, use `-NoTheme`. Your style file's other
+keys still apply.
+
+```powershell
+Convert-Markdown .\notes.md -NoTheme -Format Pdf
+```
+
 A theme is found by name in `$env:CONVERTMARKDOWN_THEMES` (a path list),
 `~/.convertmarkdown/themes`, the module's own `theming/` folder (useful with
 `Install.ps1 -Link`), then the sample themes that ship with the module. `-Theme` also
@@ -377,6 +384,7 @@ title page on.
 | `-OutputPath` | *alongside source* | With `-Format Both`, names the `.docx`; the PDF sits beside it. |
 | `-StyleSheet` | *resolved* | Style file for this run. |
 | `-Theme` | *resolved* | Theme name or path for this run. |
+| `-NoTheme` | off | Use no theme for this run, wherever one is set. Takes priority over `-Theme`. |
 | `-TitlePage` | off | Start with a title page. |
 | `-NoTitlePage` | off | No title page even if the style enables one. |
 | `-Orientation` | `Portrait` | `Portrait` or `Landscape`. |

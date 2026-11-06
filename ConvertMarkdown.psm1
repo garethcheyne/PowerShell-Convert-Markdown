@@ -444,12 +444,17 @@ function Resolve-Style {
         theme the default for every document on the machine, and any other key in
         the style file still overrides the theme.
 
+        -NoTheme leaves the theme layer out, wherever it would have come from. The style
+        file still applies, so a machine's default theme can be skipped for one document
+        without losing any settings of its own.
+
         A style or theme file only needs the keys it changes; everything else falls back.
     #>
     param(
         [string] $StyleSheet,
         [string] $SourceDir,
-        [string] $Theme
+        [string] $Theme,
+        [switch] $NoTheme
     )
 
     $style = Get-DefaultStyle
@@ -472,7 +477,8 @@ function Resolve-Style {
 
     $loaded = if ($file) { Import-StyleFile -LiteralPath $file } else { $null }
 
-    $themeRef = if ($Theme) { $Theme }
+    $themeRef = if ($NoTheme) { $null }
+    elseif ($Theme) { $Theme }
     elseif ($loaded -and $loaded.Contains('theme') -and $loaded['theme']) { [string]$loaded['theme'] }
     elseif ($env:CONVERTMARKDOWN_THEME) { $env:CONVERTMARKDOWN_THEME }
     else { $null }
@@ -1772,6 +1778,11 @@ function Convert-Markdown {
         path. Overrides the style file's own "theme" key; the style file's other keys
         still apply on top.
 
+    .PARAMETER NoTheme
+        Use no theme for this document, even when a style file or
+        $env:CONVERTMARKDOWN_THEME names one, or -Theme is also given. The style file's
+        other keys still apply.
+
     .PARAMETER TitlePage
         Start the document with a title page: logo, kicker, title and standfirst on
         a full-bleed panel, frontmatter fields along the bottom, no running header.
@@ -1869,6 +1880,8 @@ function Convert-Markdown {
 
         [string] $Theme,
 
+        [switch] $NoTheme,
+
         [switch] $TitlePage,
 
         [switch] $NoTitlePage,
@@ -1915,7 +1928,7 @@ function Convert-Markdown {
 
         # ------------------------------------------------------------- style
         # Explicit parameters beat the style file; the style file beats defaults.
-        $style = Resolve-Style -StyleSheet $StyleSheet -SourceDir (Split-Path -Parent $source) -Theme $Theme
+        $style = Resolve-Style -StyleSheet $StyleSheet -SourceDir (Split-Path -Parent $source) -Theme $Theme -NoTheme:$NoTheme
         if ($style.Contains('themeFile')) {
             Write-Verbose "Theme from $($style.themeFile)"
         }

@@ -432,6 +432,23 @@ Describe 'Themes and title page' {
         $s.colours.heading | Should -Be '#445566'          # theme still applies
     }
 
+    It 'leaves the theme out under -NoTheme, wherever it was named, and keeps the style file' {
+        $file = Join-Path $script:OutDir 'no-theme-style.json'
+        @{ theme = $script:ThemeDir; colours = @{ text = '#010203' } } | ConvertTo-Json | Set-Content -LiteralPath $file
+        $saved = $env:CONVERTMARKDOWN_THEME
+        $env:CONVERTMARKDOWN_THEME = $script:ThemeDir
+        try {
+            $s = InModuleScope ConvertMarkdown -Parameters @{ f = $file; t = $script:ThemeDir } {
+                Resolve-Style -StyleSheet $f -SourceDir $null -Theme $t -NoTheme
+            }
+        }
+        finally { $env:CONVERTMARKDOWN_THEME = $saved }
+        $s.Contains('themeFile') | Should -BeFalse
+        $s.colours.accent | Should -Be '#1F3864'           # the default, not the theme's
+        $s.cover.enabled | Should -BeFalse
+        $s.colours.text | Should -Be '#010203'             # the style file still applies
+    }
+
     It 'says where it looked when a theme is missing' {
         { InModuleScope ConvertMarkdown { Resolve-ThemeFile -Theme 'no-such-theme-anywhere' } } |
             Should -Throw -ExpectedMessage "*Theme 'no-such-theme-anywhere' not found*"
@@ -804,6 +821,23 @@ Describe 'End-to-end conversion' -Tag Word {
             $d.Close(0)
         }
         finally { $w.Quit() }
+    }
+
+    It 'skips a default theme with -NoTheme' {
+        $style = Join-Path $script:OutDir 'default-theme-style.json'
+        '{ "theme": "umbrella-corporation" }' | Set-Content -LiteralPath $style
+        $src = Join-Path $script:ExampleDir 'core-features.md'
+
+        $themed = Convert-Markdown $src -StyleSheet $style -OutputPath (Join-Path $script:OutDir 'themed.pdf') `
+            -Format Pdf -Force -DiagramService none -WarningAction SilentlyContinue
+        $themed.Theme | Should -Be 'umbrella-corporation'
+        $themed.Orientation | Should -Be 'Landscape'
+
+        $plain = Convert-Markdown $src -StyleSheet $style -NoTheme -OutputPath (Join-Path $script:OutDir 'plain.pdf') `
+            -Format Pdf -Force -DiagramService none -WarningAction SilentlyContinue
+        $plain.Theme | Should -BeNullOrEmpty
+        $plain.Orientation | Should -Be 'Portrait'
+        $plain.TitlePage | Should -BeFalse
     }
 
     It 'gives a plain document the running header and footer it always had' {
