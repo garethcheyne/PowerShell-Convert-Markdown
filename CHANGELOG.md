@@ -21,6 +21,8 @@ Versioned `yyyy.MM.dd`.
 - **Sample theme.** `themes/umbrella-corporation` is a complete report theme for a
   fictional company, with `examples/umbrella-report.md` to show it off. Sample themes
   ship with the module; private ones stay in the gitignored `theming/` folder.
+- **`-NoTheme`** skips a theme for one document, wherever it was set. The style
+  file's other keys still apply.
 
 ### Changed
 
