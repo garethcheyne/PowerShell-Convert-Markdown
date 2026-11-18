@@ -4,6 +4,8 @@ INTERNAL-NOTES.md
 # Generated output
 *.docx
 *.pdf
+dist/
+tests/results.xml
 
 # Private themes (brand colours and logos): installed per machine by Install.ps1,
 # never published

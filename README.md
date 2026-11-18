@@ -4,11 +4,21 @@ Converts Markdown into a styled Word `.docx`, a PDF, or both — with mermaid
 diagrams and Markdown images embedded as real pictures, and NextDocs extended
 Markdown rendered rather than left as raw syntax.
 
-**Version:** 2026.10.29 · **Requires:** PowerShell 7+ and Microsoft Word (desktop, Windows)
+**Version:** 2026.11.19 · **Requires:** PowerShell 7+ and Microsoft Word (desktop, Windows)
 
 ---
 
 ## Install
+
+**From a release (no git needed).** Download `ConvertMarkdown-<version>.zip` from
+[Releases](https://github.com/garethcheyne/PowerShell-Convert-Markdown/releases/latest),
+extract it, and run:
+
+```powershell
+.\ConvertMarkdown\Install.ps1
+```
+
+**From source:**
 
 ```powershell
 git clone https://github.com/garethcheyne/PowerShell-Convert-Markdown.git
@@ -34,17 +44,31 @@ immediately:
 `Install.ps1` copies from whatever folder you run it in — it does **not** fetch
 anything. Re-running it reinstalls that same local copy.
 
-To pull the latest published version:
+To install the latest published release:
 
 ```powershell
-Update-ConvertMarkdown -CheckOnly   # what's available, changes nothing
-Update-ConvertMarkdown              # fetch and replace if newer
+Update-ConvertMarkdown -CheckOnly      # what's available, changes nothing
+Update-ConvertMarkdown                 # fetch the latest release and replace if newer
+Update-ConvertMarkdown -Branch main    # unreleased work from a branch instead
 ```
 
-It downloads the branch archive over HTTPS, compares versions, and only replaces
-the module when the available one is newer (`-Force` overrides). No git client
-required. If you installed with `-Link` it will tell you to `git pull` in your
-working copy instead, rather than overwriting uncommitted work.
+It asks GitHub for the latest release, downloads its zip over HTTPS, and checks
+it against the SHA-256 digest GitHub publishes for it. It replaces the module only
+when the release is newer (`-Force` overrides). No git client is required. If you
+installed with `-Link`, it tells you to `git pull` in your working copy instead,
+rather than overwriting uncommitted work.
+
+---
+
+## Help
+
+```powershell
+Convert-Markdown --help             # one-screen quick reference (also -h, /? or no arguments)
+Get-Help Convert-Markdown -Full     # every parameter in detail
+```
+
+The quick reference lists the commands, common examples, options by group, the
+style order and your installed themes, with the default marked.
 
 ---
 
@@ -609,6 +633,36 @@ to document is a construct nobody is testing either, so the suite asserts that
 every block type, every callout type and every inline directive appears somewhere
 in the examples and fails if one is missing. Deliberately malformed input lives in
 `tests/fixtures/` instead, so the examples stay publishable.
+
+---
+
+## Releasing
+
+Versions are `yyyy.MM.dd`, with an optional `.n` for a second release on the same
+day (`2026.11.19.1`). To release:
+
+1. In a pull request, set the new version in all four places:
+   - `ModuleVersion` and `PrivateData.DisplayVersion` in `ConvertMarkdown.psd1`;
+   - `$script:Version` in `ConvertMarkdown.psm1`;
+   - the **Version** line at the top of this README.
+2. Add a `## <version>` section to `CHANGELOG.md`.
+3. Merge the pull request.
+
+**CI** runs on every push and pull request: the manifest check, PSScriptAnalyzer,
+the fast test suite (including a check that all four version strings and the
+changelog agree), and a dry-run build of the release package.
+
+**Release** runs when `main` carries a version that has no tag yet. It re-runs the
+tests, builds `ConvertMarkdown-<version>.zip` from git-tracked files only (so
+`theming/` can never be published), tags `v<version>`, and publishes a GitHub
+Release. The release notes come from the changelog section, with the zip's
+SHA-256. `Update-ConvertMarkdown` then picks the release up on every machine.
+
+The Word end-to-end tests cannot run on hosted runners, because they have no
+Word. Run `.\tests\Invoke-Tests.ps1 -IncludeWord` locally before merging a
+release.
+
+Build the package locally with `.\build\Build-Release.ps1`; it writes to `dist\`.
 
 ---
 

@@ -84,6 +84,39 @@ AfterAll {
     Remove-Item $script:OutDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Describe 'Quick-reference help' {
+    It 'shows the help for "<_>" and writes nothing to the pipeline' -ForEach @('--help', '-h', '/?', 'help') {
+        $out = @(Convert-Markdown $_ 6>$null)
+        $out.Count | Should -Be 0
+        $info = (Convert-Markdown $_ 6>&1 | Out-String)
+        $info | Should -Match 'COMMANDS'
+        $info | Should -Match 'Update-ConvertMarkdown'
+    }
+
+    It 'shows the help for -Help and for no arguments' {
+        (Convert-Markdown -Help 6>&1 | Out-String) | Should -Match 'QUICK START'
+        (Convert-Markdown 6>&1 | Out-String) | Should -Match 'QUICK START'
+    }
+}
+
+Describe 'Version is consistent' {
+    BeforeAll {
+        $script:Manifest = Import-PowerShellDataFile (Join-Path $Root 'ConvertMarkdown.psd1')
+        $script:Display = $Manifest.PrivateData.DisplayVersion
+    }
+
+    It 'uses yyyy.MM.dd, with an optional .n for a second release on the same day' {
+        $Display | Should -Match '^\d{4}\.\d{2}\.\d{2}(\.\d+)?$'
+    }
+
+    It 'matches ModuleVersion, the module script, the README and the changelog' {
+        $Manifest.ModuleVersion | Should -Be $Display
+        (Get-Content (Join-Path $Root 'ConvertMarkdown.psm1') -Raw) | Should -Match ([regex]::Escape("`$script:Version = '$Display'"))
+        (Get-Content (Join-Path $Root 'README.md') -Raw) | Should -Match ([regex]::Escape("**Version:** $Display"))
+        (Get-Content (Join-Path $Root 'CHANGELOG.md') -Raw) | Should -Match ('(?m)^## ' + [regex]::Escape($Display) + '\s*$')
+    }
+}
+
 Describe 'Corpus' {
     It 'has example documents to test against' {
         $script:Examples.Count | Should -BeGreaterThan 0
