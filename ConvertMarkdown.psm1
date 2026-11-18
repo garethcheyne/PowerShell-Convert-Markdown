@@ -13,7 +13,7 @@
 
 Set-StrictMode -Version Latest
 
-$script:Version = '2026.11.19'
+$script:Version = '2026.11.19.1'
 
 #region ---------------------------------------------------------- diagrams
 
@@ -173,6 +173,9 @@ function Get-DefaultStyle {
             # 'none' (only -TableOfContents adds one), 'word', or 'cards' for a numbered
             # two-column contents page built from the h2s and their kickers.
             contents      = 'none'
+            # Heading levels a 'word' contents lists, as "first-last". A report whose
+            # chapters are h2 wants "2-4" so its sections appear too.
+            contentsLevels = '1-3'
             contentsKicker = 'Contents'
             contentsTitle = 'What this document covers'
             # 'github': the alert palette. 'brand': accent bar on colours.band.
@@ -3010,7 +3013,7 @@ $body
                     # wdStyleTOC1, TOC2, TOC3. Colour is left to Word - the defaults
                     # are already near-black and the document ink is a hex string,
                     # not the BGR integer Font.Color wants.
-                    foreach ($sid in -20, -21, -22) {
+                    foreach ($sid in -20, -21, -22, -23, -24) {   # TOC 1-5
                         try {
                             $st = $d.Styles.Item($sid)
                             $st.Font.Name = $fontBody
@@ -3068,7 +3071,14 @@ $body
                 # RightAlignPageNumbers, IncludePageNumbers, AddedStyles,
                 # UseHyperlinks, HidePageNumbersInWeb.
                 $miss = [Type]::Missing
-                $doc.TablesOfContents.Add($tocRange, $true, 1, 3, $false, $miss, $true, $true, $miss, $true, $true) | Out-Null
+                $tocUpper = 1; $tocLower = 3
+                if ([string]$style.layout.contentsLevels -match '^\s*([1-9])\s*-\s*([1-9])\s*$' -and [int]$Matches[1] -le [int]$Matches[2]) {
+                    $tocUpper = [int]$Matches[1]; $tocLower = [int]$Matches[2]
+                }
+                elseif ($style.layout.contentsLevels) {
+                    Write-Warning "layout.contentsLevels '$($style.layout.contentsLevels)' is not 'first-last' (e.g. '2-4'); using 1-3."
+                }
+                $doc.TablesOfContents.Add($tocRange, $true, $tocUpper, $tocLower, $false, $miss, $true, $true, $miss, $true, $true) | Out-Null
                 $doc.TablesOfContents.Item(1).Update()
                 & $tocStyles $doc
             }

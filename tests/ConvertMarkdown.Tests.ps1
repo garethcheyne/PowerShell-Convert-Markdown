@@ -718,7 +718,7 @@ Describe 'End-to-end conversion' -Tag Word {
         $r = Convert-Markdown $src -OutputPath $out -Format Pdf -Force -DiagramService none -WarningAction SilentlyContinue
         Test-Path $out | Should -BeTrue
         $r.Pages | Should -BeGreaterThan 0
-        $r.Version | Should -Match '^\d{4}\.\d{2}\.\d{2}$'
+        $r.Version | Should -Match '^\d{4}\.\d{2}\.\d{2}(\.\d+)?$'
     }
 
     It 'embeds every resolvable image and reports the missing one' {

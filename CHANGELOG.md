@@ -4,6 +4,16 @@ Versioned `yyyy.MM.dd`.
 
 ---
 
+## 2026.11.19.1
+
+### Added
+
+- **`layout.contentsLevels`** sets which heading levels a `word` contents lists, as `"first-last"` (default `"1-3"`). A report whose chapters are h2, such as a merged pack, wants `"2-4"` so its sections appear. The contents styles now cover levels 4 and 5 as well.
+
+### Changed
+
+- CI and release workflows use `actions/checkout@v5` (Node 24), clearing GitHub's Node 20 deprecation warning.
+
 ## 2026.11.19
 
 ### Added
