@@ -2954,7 +2954,15 @@ $body
                     $doc.Paragraphs.Item($anchor).Range.InsertParagraphAfter()
                     $tocRange = $doc.Paragraphs.Item($anchor + 1).Range
                 }
-                $doc.TablesOfContents.Add($tocRange, $true, 1, 3) | Out-Null
+                # Entries as hyperlinks to their headings (the TOC field's \h switch),
+                # so the contents page is clickable in Word and in the exported PDF.
+                # UseHyperlinks has to be passed to Add: setting the property
+                # afterwards does not add \h to the field. Argument order: Range,
+                # UseHeadingStyles, Upper, Lower, UseFields, TableID,
+                # RightAlignPageNumbers, IncludePageNumbers, AddedStyles,
+                # UseHyperlinks, HidePageNumbersInWeb.
+                $miss = [Type]::Missing
+                $doc.TablesOfContents.Add($tocRange, $true, 1, 3, $false, $miss, $true, $true, $miss, $true, $true) | Out-Null
                 $doc.TablesOfContents.Item(1).Update()
                 & $tocStyles $doc
             }
