@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Windows, PowerShell 7)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pester and PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Module manifest
+        shell: pwsh
+        run: Test-ModuleManifest ./ConvertMarkdown.psd1 | Format-List Name, Version, ExportedFunctions
+
+      - name: PSScriptAnalyzer (errors fail the build)
+        shell: pwsh
+        run: |
+          $issues = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
+          $issues | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap
+          if ($issues) { exit 1 }
+
+      # The fast suite: no Word, no network. Word-tagged end-to-end tests need
+      # Microsoft Word, which hosted runners do not have; run them locally with
+      # ./tests/Invoke-Tests.ps1 -IncludeWord before releasing.
+      - name: Tests
+        shell: pwsh
+        run: ./tests/Invoke-Tests.ps1 -CI
+
+      - name: Release package (dry run)
+        shell: pwsh
+        run: ./build/Build-Release.ps1 | Format-List
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: tests/results.xml
+          if-no-files-found: ignore

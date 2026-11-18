@@ -4,7 +4,28 @@ Versioned `yyyy.MM.dd`.
 
 ---
 
-## Unreleased
+## 2026.11.19
+
+### Added
+
+- **Quick-reference help.** `Convert-Markdown --help` (also `-Help`, `-h`, `/?`, or
+  no arguments) prints a one-screen guide: the commands, common examples, options
+  by group, the style order, and the installed themes with the default marked.
+  `Get-Help Convert-Markdown -Full` still has every parameter in detail.
+- **Releases.** Every version merged to `main` is now tagged `v<version>` and
+  published as a GitHub Release with a `ConvertMarkdown-<version>.zip`. The
+  pipeline runs the tests first and refuses a release whose version strings
+  disagree or have no changelog entry.
+- **CI.** Every push and pull request runs the manifest check, PSScriptAnalyzer and
+  the fast test suite on Windows.
+
+### Changed
+
+- **`Update-ConvertMarkdown` installs from the latest release**, not the tip of
+  `main`. It verifies the zip against the SHA-256 digest GitHub publishes. Use
+  `-Branch main` for unreleased work. It falls back to `main`, with a warning,
+  only if no release exists.
+- **`Convert-Markdown` with no path shows the help** instead of prompting for one.
 
 ### Fixed
 

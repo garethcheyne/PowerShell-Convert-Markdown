@@ -13,7 +13,7 @@
 
 Set-StrictMode -Version Latest
 
-$script:Version = '2026.11.06'
+$script:Version = '2026.11.19'
 
 #region ---------------------------------------------------------- diagrams
 
@@ -1736,6 +1736,90 @@ function Get-ConvertMarkdownVersion {
     }
 }
 
+function Show-ConvertMarkdownHelp {
+    # One-screen quick reference for 'Convert-Markdown --help' / -Help / no args.
+    # Write-Host on purpose: this is for the person at the console, not pipeline data.
+    # Colour comes from $PSStyle, so NO_COLOR and redirected output stay plain.
+    [CmdletBinding()]
+    param()
+
+    $s = $PSStyle
+    $acc = $s.Foreground.FromRgb(0x66C1E8); $hd = $s.Bold + $s.Foreground.FromRgb(0x2D8CFF)
+    $cmd = $s.Foreground.BrightWhite + $s.Bold; $opt = $s.Foreground.BrightYellow
+    $dim = $s.Foreground.BrightBlack; $ok = $s.Foreground.BrightGreen; $r = $s.Reset
+
+    $width = 76
+    try { $width = [Math]::Max(60, [Math]::Min(100, $Host.UI.RawUI.WindowSize.Width - 2)) } catch { }
+    $line = '─' * ($width - 2)
+
+    $title = " ConvertMarkdown $($script:Version)"
+    $tag = 'Markdown → Word & PDF '
+    $pad = [Math]::Max(1, $width - 2 - $title.Length - $tag.Length)
+    Write-Host ''
+    Write-Host "$acc╭$line╮$r"
+    Write-Host "$acc│$r$cmd$title$r$(' ' * $pad)$dim$tag$r$acc│$r"
+    Write-Host "$acc╰$line╯$r"
+
+    $section = { param($t) Write-Host ''; Write-Host "$hd$t$r" }
+    $row = {
+        param($left, $right, [int]$col = 34, [string]$colour = $cmd)
+        $gap = [Math]::Max(2, $col - $left.Length)
+        Write-Host ("  $colour$left$r$(' ' * $gap)$right")
+    }
+
+    & $section 'COMMANDS'
+    & $row 'Convert-Markdown <file.md>' 'Convert to Word (default), PDF or both'
+    & $row 'New-ConvertMarkdownStyle' 'Create a style file with every option'
+    & $row 'Update-ConvertMarkdown' "Install the latest GitHub release  $dim(-CheckOnly to just look)$r"
+    & $row 'Get-ConvertMarkdownVersion' 'Show the installed version and path'
+
+    & $section 'QUICK START'
+    & $row 'Convert-Markdown .\notes.md' 'Word document beside the source' 52
+    & $row 'Convert-Markdown .\report.md -Format Pdf' 'PDF' 52
+    & $row 'Convert-Markdown .\report.md -Format Both -Force' 'Both, overwriting' 52
+    & $row 'Convert-Markdown .\pack.md -Theme acme -Open' 'Branded, left open in Word' 52
+    & $row 'Get-ChildItem *.md | Convert-Markdown -Format Pdf' 'Every file in a folder' 52
+
+    & $section 'OPTIONS'
+    $groups = [ordered]@{
+        'Output'   = '-Format Docx|Pdf|Both  -OutputPath <file>  -Force  -Open'
+        'Look'     = '-Theme <name>  -NoTheme  -StyleSheet <file>  -Accent #RRGGBB'
+        'Page'     = '-Orientation Portrait|Landscape  -Margin <mm>'
+        'Contents' = '-TitlePage  -NoTitlePage  -TableOfContents'
+        'Diagrams' = '-DiagramService mermaid.ink|kroki|none  -DiagramServiceUrl  -DiagramMaxWidth'
+        'Images'   = '-ImageMaxWidth <px>  -NoRemoteImages'
+        'Content'  = '-ExcludeRestricted   (drop role-gated sections)'
+    }
+    foreach ($k in $groups.Keys) { Write-Host ("  $ok{0,-10}$r$opt{1}$r" -f $k, $groups[$k]) }
+
+    & $section 'STYLE ORDER  (first match wins)'
+    Write-Host "  $opt-StyleSheet$r → $opt`$env:CONVERTMARKDOWN_STYLE$r → $opt.convertmarkdown.json$r beside the file"
+    Write-Host "  → $opt~/.convertmarkdown/style.json$r → built-in defaults.  A theme sits under the style file."
+
+    & $section 'THEMES'
+    $themeDir = Join-Path $HOME '.convertmarkdown\themes'
+    $bundled = Join-Path $PSScriptRoot 'themes'
+    $names = @(foreach ($d in @($themeDir, $bundled)) {
+            if (Test-Path -LiteralPath $d) { Get-ChildItem -LiteralPath $d -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'theme.json') } | ForEach-Object Name }
+        }) | Sort-Object -Unique
+    $default = $null
+    $profileStyle = Join-Path $HOME '.convertmarkdown\style.json'
+    if (Test-Path -LiteralPath $profileStyle) {
+        try { $default = (Get-Content -LiteralPath $profileStyle -Raw | ConvertFrom-Json).theme } catch { }
+    }
+    if ($names) {
+        $list = $names | ForEach-Object { if ($_ -eq $default) { "$ok$_ (default)$r" } else { $_ } }
+        Write-Host ('  ' + ($list -join "$dim · $r"))
+    }
+    else { Write-Host "  ${dim}None installed. Add one under ~/.convertmarkdown/themes/<name>/theme.json$r" }
+
+    & $section 'MORE'
+    & $row 'Get-Help Convert-Markdown -Full' 'Every parameter in detail'
+    & $row 'Aliases' "${cmd}md2docx$r, ${cmd}md2pdf$r"
+    & $row 'Docs and releases' "${acc}https://github.com/garethcheyne/PowerShell-Convert-Markdown$r"
+    Write-Host ''
+}
+
 function Convert-Markdown {
     <#
     .SYNOPSIS
@@ -1760,7 +1844,14 @@ function Convert-Markdown {
         Requires PowerShell 7 and Microsoft Word (desktop, for COM automation).
 
     .PARAMETER Path
-        Path to the source .md file. Accepts pipeline input.
+        Path to the source .md file. Accepts pipeline input. With no path, the
+        command shows its quick-reference help.
+
+    .PARAMETER Help
+        Show a one-screen quick reference: the commands, common examples, the
+        options by group, the style order and the installed themes. Also shown for
+        "Convert-Markdown --help", "-h", "/?" or no arguments. For every parameter
+        in full, use Get-Help Convert-Markdown -Full.
 
     .PARAMETER OutputPath
         Output file path. Defaults to the source name with the format's extension,
@@ -1849,6 +1940,9 @@ function Convert-Markdown {
         Overwrite existing output files.
 
     .EXAMPLE
+        Convert-Markdown --help
+
+    .EXAMPLE
         Convert-Markdown .\CHANGELOG.md -TableOfContents
 
     .EXAMPLE
@@ -1867,9 +1961,14 @@ function Convert-Markdown {
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory, Position = 0, ValueFromPipeline, ValueFromPipelineByPropertyName)]
+        # Not Mandatory: with no file (or --help / -h / /?) the command shows its
+        # quick-reference help instead of prompting for a path.
+        [Parameter(Position = 0, ValueFromPipeline, ValueFromPipelineByPropertyName)]
         [Alias('FullName')]
         [string] $Path,
+
+        [Alias('h')]
+        [switch] $Help,
 
         [string] $OutputPath,
 
@@ -1920,6 +2019,13 @@ function Convert-Markdown {
     begin { $ErrorActionPreference = 'Stop' }
 
     process {
+        # Quick reference: -Help/-h, no file at all, or the usual CLI spellings,
+        # which PowerShell binds to -Path because it has no '--' parameters.
+        if ($Help -or [string]::IsNullOrWhiteSpace($Path) -or $Path -in '--help', '-help', 'help', '--h', '-h', '/?', '/h', '-?') {
+            Show-ConvertMarkdownHelp
+            return
+        }
+
         $script:tempFiles = [Collections.Generic.List[string]]::new()
         Write-Verbose "ConvertMarkdown v$($script:Version)"
 
@@ -3069,11 +3175,15 @@ function Update-ConvertMarkdown {
         Updates the installed module from GitHub.
 
     .DESCRIPTION
-        Downloads the latest release of the repository, compares its version with
-        the installed one, and replaces the installed module if it is newer.
+        Fetches the latest published GitHub Release, compares its version with the
+        installed one, and replaces the installed module if it is newer. The
+        release zip is checked against the SHA-256 digest GitHub publishes for it.
 
         This works regardless of where the module was originally installed from,
-        and needs no git client -- it fetches the branch archive over HTTPS.
+        and needs no git client.
+
+        -Branch fetches a branch archive instead (a development build). If the
+        repository has no release yet, it falls back to the main branch.
 
         Installed with Install.ps1 -Link? Then the install points at your working
         copy and this is not the right tool: pull in that folder instead, and the
@@ -3086,29 +3196,36 @@ function Update-ConvertMarkdown {
         Reinstall even when the installed version is already current.
 
     .PARAMETER Branch
-        Branch to fetch. Default 'main'.
+        Fetch this branch instead of the latest release, e.g. 'main' for the
+        newest unreleased work.
 
     .EXAMPLE
         Update-ConvertMarkdown -CheckOnly
 
     .EXAMPLE
         Update-ConvertMarkdown
+
+    .EXAMPLE
+        Update-ConvertMarkdown -Branch main -Force
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [switch] $CheckOnly,
         [switch] $Force,
-        [string] $Branch = 'main'
+        [string] $Branch
     )
 
     $ErrorActionPreference = 'Stop'
     $repo = 'garethcheyne/PowerShell-Convert-Markdown'
     $installed = $script:Version
     $moduleDir = $PSScriptRoot
+    $headers = @{ 'User-Agent' = 'ConvertMarkdown'; 'Accept' = 'application/vnd.github+json' }
+
+    # yyyy.MM.dd[.n] -> [version], dropping the zero padding ('2026.11.06' -> 2026.11.6).
+    $toVersion = { param($v) [version](($v -split '\.' | ForEach-Object { [int]$_ }) -join '.') }
 
     # A symlinked install points back at a working copy; overwriting it would
     # clobber uncommitted work.
-    $parent = Split-Path -Parent $moduleDir
     $self = Get-Item -LiteralPath $moduleDir -ErrorAction SilentlyContinue
     if ($self -and $self.LinkType -eq 'SymbolicLink') {
         Write-Warning "This module is a symlink to $($self.Target). Update it with 'git pull' there instead."
@@ -3120,13 +3237,53 @@ function Update-ConvertMarkdown {
 
     try {
         $zip = Join-Path $work 'src.zip'
-        Write-Verbose "Fetching $repo ($Branch)"
+        $source = $null
 
-        # codeload serves the archive directly. The github.com/archive URL relies
-        # on a redirect that can return an HTML interstitial instead of the zip,
-        # which surfaces as an opaque FileFormatException from Expand-Archive.
-        Invoke-WebRequest -Uri "https://codeload.github.com/$repo/zip/refs/heads/$Branch" `
-            -OutFile $zip -TimeoutSec 60 -Headers @{ 'User-Agent' = 'ConvertMarkdown' } -ErrorAction Stop
+        if (-not $Branch) {
+            # Latest published release. A 404 means there is none yet.
+            $release = $null
+            try {
+                $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" `
+                    -Headers $headers -TimeoutSec 30 -ErrorAction Stop
+            }
+            catch {
+                if ($_.Exception.Response.StatusCode.value__ -eq 404) {
+                    Write-Warning 'No published release found; falling back to the main branch.'
+                    $Branch = 'main'
+                }
+                else { throw "Could not reach the GitHub releases API: $($_.Exception.Message)" }
+            }
+
+            if ($release) {
+                $asset = $release.assets | Where-Object { $_.name -like 'ConvertMarkdown-*.zip' } | Select-Object -First 1
+                if (-not $asset) { throw "Release $($release.tag_name) has no ConvertMarkdown-*.zip asset." }
+                Write-Verbose "Fetching release $($release.tag_name): $($asset.browser_download_url)"
+                Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -TimeoutSec 120 `
+                    -Headers @{ 'User-Agent' = 'ConvertMarkdown' } -ErrorAction Stop
+
+                # GitHub publishes a SHA-256 digest for every release asset.
+                if ($asset.digest -match '^sha256:([0-9a-fA-F]{64})$') {
+                    $expected = $Matches[1].ToUpperInvariant()
+                    $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+                    if ($actual -ne $expected) {
+                        throw "Checksum mismatch for $($asset.name): expected $expected, got $actual. Not installing."
+                    }
+                    Write-Verbose 'SHA-256 verified.'
+                }
+                else { Write-Warning "No SHA-256 digest published for $($asset.name); integrity not verified." }
+                $source = "release $($release.tag_name)"
+            }
+        }
+
+        if ($Branch) {
+            Write-Verbose "Fetching $repo ($Branch)"
+            # codeload serves the archive directly. The github.com/archive URL relies
+            # on a redirect that can return an HTML interstitial instead of the zip,
+            # which surfaces as an opaque FileFormatException from Expand-Archive.
+            Invoke-WebRequest -Uri "https://codeload.github.com/$repo/zip/refs/heads/$Branch" `
+                -OutFile $zip -TimeoutSec 60 -Headers @{ 'User-Agent' = 'ConvertMarkdown' } -ErrorAction Stop
+            $source = "branch $Branch"
+        }
 
         # Verify it really is a zip before handing it to Expand-Archive, so a
         # captive portal or rate-limit page gives a comprehensible error.
@@ -3137,23 +3294,24 @@ function Update-ConvertMarkdown {
             throw "Download was not a zip archive (got $([BitConverter]::ToString($magic))). A proxy or captive portal may have intercepted the request."
         }
 
-        Expand-Archive -LiteralPath $zip -DestinationPath $work -Force
-        $src = Get-ChildItem -LiteralPath $work -Directory |
-            Where-Object { $_.Name -like 'PowerShell-Convert-Markdown*' } |
+        $extract = Join-Path $work 'x'
+        Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+        # A release zip holds ConvertMarkdown\; a branch archive holds
+        # PowerShell-Convert-Markdown-<branch>\. Either way, find the manifest.
+        $newManifest = Get-ChildItem -LiteralPath $extract -Filter 'ConvertMarkdown.psd1' -Recurse -Depth 2 |
             Select-Object -First 1
-        if (-not $src) { throw 'Downloaded archive did not contain the expected folder.' }
+        if (-not $newManifest) { throw 'Downloaded archive has no module manifest.' }
+        $src = $newManifest.Directory
 
-        $newManifest = Join-Path $src.FullName 'ConvertMarkdown.psd1'
-        if (-not (Test-Path -LiteralPath $newManifest)) { throw 'Downloaded archive has no module manifest.' }
+        $available = (Import-PowerShellDataFile -LiteralPath $newManifest.FullName).PrivateData.DisplayVersion
 
-        $available = (Import-PowerShellDataFile -LiteralPath $newManifest).PrivateData.DisplayVersion
-
-        $isNewer = [version]($available -replace '\.0*', '.') -gt [version]($installed -replace '\.0*', '.')
+        $isNewer = (& $toVersion $available) -gt (& $toVersion $installed)
 
         $result = [pscustomobject]@{
             Installed = $installed
             Available = $available
             IsNewer   = $isNewer
+            Source    = $source
             Action    = 'None'
             Path      = $moduleDir
         }
@@ -3177,7 +3335,7 @@ function Update-ConvertMarkdown {
             Copy-Item -LiteralPath $sampleThemes -Destination $moduleDir -Recurse -Force
         }
 
-        Write-Host "ConvertMarkdown updated: $installed -> $available" -ForegroundColor Green
+        Write-Host "ConvertMarkdown updated: $installed -> $available ($source)" -ForegroundColor Green
         Write-Host 'Open a new session, or run: Import-Module ConvertMarkdown -Force' -ForegroundColor Yellow
 
         $result.Action = "Updated to $available"
