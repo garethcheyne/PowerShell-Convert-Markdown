@@ -4,6 +4,15 @@ Versioned `yyyy.MM.dd`.
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- **Word contents entries are now clickable.** `layout.contents: "word"` built the
+  table of contents without the `\h` switch, so its entries were plain text in Word
+  and in the PDF. Each entry now links to its heading. The switch has to be passed
+  when the table is created: setting `UseHyperlinks` afterwards has no effect.
+
 ## 2026.11.06
 
 ### Added
