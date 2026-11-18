@@ -4,7 +4,7 @@ Converts Markdown into a styled Word `.docx`, a PDF, or both — with mermaid
 diagrams and Markdown images embedded as real pictures, and NextDocs extended
 Markdown rendered rather than left as raw syntax.
 
-**Version:** 2026.11.19 · **Requires:** PowerShell 7+ and Microsoft Word (desktop, Windows)
+**Version:** 2026.11.19.1 · **Requires:** PowerShell 7+ and Microsoft Word (desktop, Windows)
 
 ---
 
@@ -358,7 +358,7 @@ Phase 2 | Build | Label, title and text, split by pipes
 
 `:kicker[]` is the small label above a heading. It goes on its own line, directly
 above the heading, and a `cards` contents page lists it beside the section title.
-`strip 5` wraps the steps every five; without a number they share one row, up to six.
+`layout.contentsLevels` sets which heading levels a `word` contents lists (default `"1-3"`; a report whose chapters are h2 wants `"2-4"`). `strip 5` wraps the steps every five; without a number they share one row, up to six.
 
 ---
 

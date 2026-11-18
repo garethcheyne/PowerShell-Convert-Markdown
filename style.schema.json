@@ -233,6 +233,12 @@
           "default": "none",
           "description": "'none': contents only with -TableOfContents. 'word': always add Word's table of contents. 'cards': a numbered two-column contents page built from the h2s and their kickers, also used for -TableOfContents."
         },
+        "contentsLevels": {
+          "type": "string",
+          "pattern": "^\\s*[1-9]\\s*-\\s*[1-9]\\s*$",
+          "default": "1-3",
+          "description": "Heading levels a 'word' contents lists, as 'first-last'. A report whose chapters are h2 wants '2-4' so its sections are listed too."
+        },
         "contentsKicker": {
           "type": "string",
           "default": "Contents",
